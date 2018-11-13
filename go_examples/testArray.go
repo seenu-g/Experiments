@@ -16,6 +16,11 @@ func main() {
 		fmt.Printf("Element[%d] = %d\n", j, x[j])
 	}
 
+	primeNums := [6]int{2, 3, 5, 7, 11, 13}
+	fmt.Println("Primes numbers: ", primeNums)
+	var part []int = primeNums[1:4]
+	fmt.Println("Part 1-4 of primes: ", part)
+
 	var b = 5
 	var a = [3][3]int{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}
 	/* output each array element's value */
@@ -46,5 +51,11 @@ func main() {
 
 	str = "Hi...there"
 	fmt.Println(strings.Replace(str, "e", "Z", 2))
+
+	var word [2]string
+	word[0] = "Hello"
+	word[1] = "World"
+	fmt.Println(word[0], word[1])
+	fmt.Println(word)
 
 }
