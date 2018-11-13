@@ -8,6 +8,7 @@ import (
 
 func main() {
 	var rectLen, rectWidth float64 = 6, 7
+	// rectangle.init() // init starts with small letter
 	fmt.Println("Geometrical shape properties")
 	/*Area function of rectangle package used
 	 */
