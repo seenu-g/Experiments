@@ -22,6 +22,16 @@ func main() {
 	} else {
 		fmt.Println(result)
 	}
+
+	fmt.Println(split(17))
+	fmt.Println(split(29))
+	a, b := split(49);
+	fmt.Println(a,b)
+
+	fmt.Println(add(42, 13))
+
+	fmt.Println(math.Pi)
+
 	greet, name := Greeting("Srinivasan")
 	fmt.Println(greet + name)
 
@@ -29,6 +39,17 @@ func main() {
 	print1("Mridula Srinivasan")
 
 }
+
+func split(sum int) (x, y int) {
+	x = sum * 4 / 9
+	y = sum - x
+	return
+}
+
+func add(x, y int) int {
+	return x + y
+}
+
 func SaveDivide(num1, num2 int) int {
 	defer func() {
 		fmt.Println(recover())
