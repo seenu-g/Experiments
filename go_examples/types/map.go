@@ -37,8 +37,18 @@ func main() {
 
 	fmt.Println("map values:", map_values)
 
+    //For any associative data structure, to get only values, use 'for _, value'. To get only keys, use 'for key'.
+	fmt.Println("use for each to display map values");
+	for _, value := range map_values { 
+		fmt.Printf("%d ",value);
+	  } 
+	fmt.Println("\n use for each to display map keys");
+	for key := range map_values { 
+		fmt.Printf(key);fmt.Printf(" ");
+	  } 
+
 	delete(map_values, "Gopal Triple")
-	fmt.Println("Dropping one entry, map values:", map_values)
+	fmt.Println("\n Dropping one entry, map values:", map_values)
 
 	v, ok := map_values["Gopal Triple"]
 	fmt.Println("Gopal Triple:", v, "Present?", ok)
