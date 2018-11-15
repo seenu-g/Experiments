@@ -14,6 +14,8 @@ var (
 const Pi = 3.14
 
 func main() {
+	defer fmt.Println("world")
+
 	var i, j int = 1, 2
 	k := 3
 	c, python, java := true, false, "no!"
@@ -28,6 +30,9 @@ func main() {
 	fmt.Println(x, y, f)
 
 	fmt.Println(Pi)
+
+	fmt.Println("hello")
+
 }
 
 /*
