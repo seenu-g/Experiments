@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strings"
 )
-// go run client.go --request_url=http://localhost:3000/contactservice --request_method=post --request_data='{"Id":0,"Email":"bga@bug-br.org.br"}'
-
+// go run client.go --request_url=http://localhost:3000/contactbook --request_method=post --request_data='{"Id":0,"Email":"ray@tmplr.io", "Name":"Raymond"}'
+// go run client.go --request_url="http://127.0.0.1:3000/guestbook"
+// go run client.go --request_url=http://localhost:3000/contactbook/0 --request_method=delete 
+// go run client.go --request_url=http://localhost:3000/contactbook --request_method=delete
 // Command line flags.
 var requestUrl = flag.String("request_url", "",
 	"Host and port to send the request to")
@@ -77,7 +79,7 @@ func doRequest(requestMethod, requestUrl,
 
 	return res, err
 }
-
+//https://github.com/brunoga/go-webservice-sample/blob/master/client.go
 func main() {
 	// Parse command line flags.
 	flag.Parse()
