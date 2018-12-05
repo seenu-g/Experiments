@@ -17,8 +17,16 @@ print(thisset)
 thisset.remove("SmallTalk")
 print(thisset)
 
+# remove() will raise an error if item does not exist, and  discard()  will not.
+thisset.discard("soldity")
+
+
 if "SmallTalk" in thisset:
       print("Yes, 'SmallTalk' is in the list")
 else:
       print("No, 'SmallTalk' is not in the list")
 
+languages = thisset.copy()
+languages.remove("solidity")
+print("Removed from copied set : ", languages)
+print("Orginal set : ",thisset)
