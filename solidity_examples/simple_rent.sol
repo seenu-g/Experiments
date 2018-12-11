@@ -21,7 +21,8 @@ contract RentAgreement {
     constructor( string memory _house) public {
         house = _house;
         houseOwner = msg.sender;
-        state = State.Created; 
+        state = State.Created;
+        emit assetCreated(); 
     }
     function putHouseonRent(uint256 _rent) public{
          if(msg.sender == houseOwner && state == State.Created)
@@ -53,6 +54,7 @@ contract RentAgreement {
         return state;
     }
 
+    event assetCreated();
     event contractSigned();
     event paidRent();
     event contractOver();
