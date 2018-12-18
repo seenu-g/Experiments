@@ -48,7 +48,7 @@ contract SharedWallet {
         msg.sender.transfer(amount);
         emit TransferFunds(msg.sender, to, amount);
     }
-    function getCommonbalance() validHolder view public returns (uint256){
+    function walletBalance() validHolder view public returns (uint256){
         return address(this).balance;
     }  
 }
