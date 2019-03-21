@@ -11,11 +11,19 @@ const payload = {
     Verb: 'set',
     Name: 'foo',
     Value: 42
+//    name: 'game1',
+//    action: 'create',
+//    space: 1
 }
 const payloadBytes = cbor.encode(payload)
+//node index.js  '{"name": "game1", "action": "create"}'
+//node index.js  '{"name": "game1","action": "take","space" :"Name"}'
+//name values: game1, game2, game 3
+//action values: create, delete, take
+//space value: 1-9 (inclusive), if the action is take
 
 const transactionHeaderBytes = protobuf.TransactionHeader.encode({
-    familyName: 'intkey',
+    familyName: 'xo1',
     familyVersion: '1.0',
     inputs: ['1cf1266e282c41be5e4254d8820772c5518a2c5a8c0c7f7eda19594a7eb539453e1ed7'],
     outputs: ['1cf1266e282c41be5e4254d8820772c5518a2c5a8c0c7f7eda19594a7eb539453e1ed7'],

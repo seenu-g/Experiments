@@ -8,8 +8,91 @@ const XoPayload = require('./payload');
 
 const _hash = (x) =>
     crypto.createHash('sha512').update(x).digest('hex').toLowerCase().substring(0, 64)
-const XO_FAMILY = 'xo'
+const XO_FAMILY = 'xo1'
 const XO_NAMESPACE = _hash(XO_FAMILY).substring(0, 6)
+
+const _makeXoAddress = (x) => XO_NAMESPACE + _hash(x)
+
+const _gameToStr = (board, state, player1, player2, name) => {
+  board = board.replace(/-/g, ' ')
+  board = board.split('')
+  let out = ''
+  out += `GAME: ${name}\n`
+  out += `PLAYER 1: ${player1.substring(0, 6)}\n`
+  out += `PLAYER 2: ${player2.substring(0, 6)}\n`
+  out += `STATE: ${state}\n`
+  out += `\n`
+  out += `${board[0]} | ${board[1]} | ${board[2]} \n`
+  out += `---|---|--- \n`
+  out += `${board[3]} | ${board[4]} | ${board[5]} \n`
+  out += `---|---|--- \n`
+  out += `${board[6]} | ${board[7]} | ${board[8]} \n`
+  return out
+}
+
+const _display = msg => {
+  let n = msg.search('\n')
+  let length = 0
+
+  if (n !== -1) {
+    msg = msg.split('\n')
+    for (let i = 0; i < msg.length; i++) {
+      if (msg[i].length > length) {
+        length = msg[i].length
+      }
+    }
+  } else {
+    length = msg.length
+    msg = [msg]
+  }
+
+  console.log('+' + '-'.repeat(length + 2) + '+')
+  for (let i = 0; i < msg.length; i++) {
+    let len = length - msg[i].length
+
+    if (len % 2 === 1) {
+      console.log(
+        '+ ' +
+          ' '.repeat(Math.floor(len / 2)) +
+          msg[i] +
+          ' '.repeat(Math.floor(len / 2 + 1)) +
+          ' +'
+      )
+    } else {
+      console.log(
+        '+ ' +
+          ' '.repeat(Math.floor(len / 2)) +
+          msg[i] +
+          ' '.repeat(Math.floor(len / 2)) +
+          ' +'
+      )
+    }
+  }
+  console.log('+' + '-'.repeat(length + 2) + '+')
+}
+
+const _isWin = (board, letter) => {
+  let wins = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9],
+    [1, 4, 7],
+    [2, 5, 8],
+    [3, 6, 9],
+    [1, 5, 9],
+    [3, 5, 7]
+  ]
+  let win
+  for (let i = 0; i < wins.length; i++) {
+    win = wins[i]
+    if (board[win[0] - 1] === letter &&
+        board[win[1] - 1] === letter &&
+        board[win[2] - 1] === letter) {
+      return true
+    }
+  }
+  return false
+}
 
 class XOHandler extends TransactionHandler {
     constructor () {
@@ -18,7 +101,9 @@ class XOHandler extends TransactionHandler {
   
     apply (transactionProcessRequest, context) {
 
-        let payload = XoPayload.fromBytes(transactionProcessRequest.payload)
+      let payload = XoPayload.fromBytes(transactionProcessRequest.payload)
+       // let input = cbor.decode(transactionProcessRequest.payload)      
+       // let payload = XoPayload.fromBytes(input)
         let xoState = new XoState(context)
         let header = transactionProcessRequest.header
         let player = header.signerPublicKey

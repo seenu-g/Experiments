@@ -1,3 +1,4 @@
+const { InvalidTransaction, InternalError } = require('sawtooth-sdk/processor/exceptions')
 class XoPayload {
     constructor (name, action, space) {
         this.name = name
@@ -25,3 +26,4 @@ class XoPayload {
         }
     }
 }
+module.exports = XoPayload
