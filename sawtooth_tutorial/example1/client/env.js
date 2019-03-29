@@ -9,7 +9,7 @@ const env = {
   privateKey: process.env.PRIVATE_KEY || '',
   publicKey: process.env.PUBLIC_KEY || '',
   restApiUrl: process.env.REST_API_URL || 'http://localhost:8008',
-  familyName: 'intkey',
+  familyName: 'example1',
   familyPrefix: leafHash('intkey', 6),
   familyVersion: '1.0'
 }

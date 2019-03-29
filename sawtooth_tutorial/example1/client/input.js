@@ -33,8 +33,10 @@ const input = {
   
   const verbIsValid = (verb) => {
     const trimmed = verb.trim()
-    if (trimmed === 'inc' || trimmed === 'dec' || trimmed === 'set') return true
-    else return false
+    if (trimmed === 'inc' || trimmed === 'dec' || trimmed === 'set'|| trimmed === 'get') 
+         return true
+    else 
+        return false
   }
   
   const nameIsValid = (name) => {
