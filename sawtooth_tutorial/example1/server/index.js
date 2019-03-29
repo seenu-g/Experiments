@@ -8,5 +8,5 @@ const transactionProcessor = new TransactionProcessor(env.validatorUrl)
 transactionProcessor.addHandler(new IntegerKeyHandler())
 transactionProcessor.start()
 
-console.log(`Starting intkey transaction processor`)
+console.log(`Starting example1 transaction processor`)
 console.log(`Connecting to Sawtooth validator at ${env.validatorUrl}`)

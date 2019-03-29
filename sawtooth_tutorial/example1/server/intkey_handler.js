@@ -10,7 +10,7 @@ const _hash = (x) =>
 const MIN_VALUE = 0
 const MAX_VALUE = 4294967295
 const MAX_NAME_LENGTH = 20
-const TP_FAMILY = 'intkey'
+const TP_FAMILY = 'example1'
 const TP_NAMESPACE = _hash(TP_FAMILY).substring(0, 6)
 const TP_VERSION = '1.0'
 
@@ -135,6 +135,8 @@ class IntegerKeyHandler extends TransactionHandler {
         let actionFn
         if (verb === 'set') {
           actionFn = _applySet
+        } else if (verb === 'get') {
+          actionFn = _applyGet
         } else if (verb === 'dec') {
           actionFn = _applyDec
         } else if (verb === 'inc') {
