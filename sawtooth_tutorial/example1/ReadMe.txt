@@ -30,5 +30,42 @@ node init.js
 // Go to Browser and navigate to URL
 http://localhost:8008/state
 
+//In Local machine
+// To completely reset the Sawtooth environment and start from first
+// To view logs
+sudo ls -l /var/log/sawtooth
+// To delete the blockchain data, remove all files from /var/lib/sawtooth. 
+  rm -R /var/lib/sawtooth/*
+// To delete the Sawtooth logs, remove all files from /var/log/sawtooth/.
+// find /var/log/sawtooth/ -mtime +1 -name *.log -exec rm -rf {} \;
+// find /var/log/sawtooth/ -name *.log -exec rm -rf {} \;
+// To delete the Sawtooth keys, remove the key files /etc/sawtooth/keys/validator.\* and /home/yourname/.sawtooth/keys/yourname.\*.
+// Ensure that sawtooth keys are generated // use --force if needed to overwrite existing files
+sawtooth keygen
 
+sawset genesis
+sudo -u sawtooth sawadm genesis config-genesis.batch
 
+// Generate root key for validator // use --force if needed
+sudo sawadm keygen
+
+// start Validator  in separate terminal
+sudo -u sawtooth sawtooth-validator -vv
+
+//Run devmode consenus engine
+sudo -u sawtooth devmode-engine-rust -vv --connect tcp://localhost:5050
+
+//start REST API // defauly output is "Running on http://127.0.0.1:8008" 
+sudo -u sawtooth sawtooth-rest-api -v
+
+//start settings processor
+sudo -u sawtooth settings-tp -v
+
+//check if setting returns values set
+sawtooth settings list
+
+// start intkey processor. You can test values go to validator
+sudo -u sawtooth intkey-tp-python -v
+
+intkey create_batch --count 10 --key-count 5
+intkey load -f batches.intkey

@@ -31,6 +31,21 @@ const _setEntry = (context, address, stateValue) => {
   return context.setState(entries)
 }
 
+const _applyGet = (context, address, name, value) => (possibleAddressValues) => {
+
+  let stateValueRep = possibleAddressValues[address]
+  if (!stateValueRep || stateValueRep.length === 0) {
+    throw new InvalidTransaction(`Verb is "${verb}" but Name is not in state`)
+  }
+
+  let stateValue = cbor.decodeFirstSync(stateValueRep)
+  if (stateValue[name] === null || stateValue[name] === undefined) {
+    throw new InvalidTransaction(`Verb is "${verb}" but Name is not in state`)
+  }
+  console.log(stateValue[name])
+  return stateValue[name];
+}
+
 const _applySet = (context, address, name, value) => (possibleAddressValues) => {
   let stateValueRep = possibleAddressValues[address]
 
@@ -79,7 +94,7 @@ const _applyOperator = (verb, op) => (context, address, name, value) => (possibl
       `Verb is "${verb}", but result would be greater than ${MAX_VALUE}`
     )
   }
-
+  console.log (result)
   // Increment the value in state by value
   // stateValue[name] = op(stateValue[name], value)
   stateValue[name] = result
