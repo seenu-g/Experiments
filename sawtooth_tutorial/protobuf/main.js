@@ -1,4 +1,3 @@
-require('./people')
 const cbor = require('cbor')
 var protobuf = require("protobufjs");
 var protos = require("./payload.js")

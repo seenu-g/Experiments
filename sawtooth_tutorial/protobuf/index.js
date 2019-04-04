@@ -1,4 +1,3 @@
-require('./people')
 const cbor = require('cbor')
 var protobuf = require("protobufjs");
 
@@ -38,11 +37,6 @@ const newPayload = {
 
   temp  = cbor.decode(payloadBytes)
   console.log(temp)
-
-  demo = protobuf.roots.default.demo
-  const People = demo.People;
-  const Person = demo.Person;
-  const Address = demo.Address;
 
     var protobuf = require("protobufjs");
     var protos = require("./model.js")
