@@ -43,6 +43,16 @@ sudo ls -l /var/log/sawtooth
 // Ensure that sawtooth keys are generated // use --force if needed to overwrite existing files
 sawtooth keygen
 
+sudo rm  /var/lib/dpkg/lock
+sudo chown sawtooth:sawtooth /var/lib/sawtooth /var/lib/sawtooth/*
+sudo chown root:sawtooth /etc/sawtooth/keys /etc/sawtooth/keys/*
+sudo chmod 755 /etc/sawtooth/keys
+sudo chmod 640 /etc/sawtooth/keys/validator.priv
+sudo chmod 644 /etc/sawtooth/keys/validator.pub
+
+addgroup --system sawtooth; 
+adduser --system --ingroup sawtooth sawtooth 
+
 sawset genesis
 sudo -u sawtooth sawadm genesis config-genesis.batch
 
@@ -59,6 +69,7 @@ sudo -u sawtooth devmode-engine-rust -vv --connect tcp://localhost:5050
 sudo -u sawtooth sawtooth-rest-api -v
 
 //start settings processor
+//Settings TP is always required for all node, even if you did not add or change any settings.
 sudo -u sawtooth settings-tp -v
 
 //check if setting returns values set

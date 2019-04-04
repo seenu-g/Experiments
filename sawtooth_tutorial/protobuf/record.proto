@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package model;
+
+message Record {
+    message Owner {
+        string agent_id = 1;
+        uint64 timestamp = 2;
+    }
+    message Location {
+        sint64 latitude = 1;
+        sint64 longitude = 2;
+        uint64 timestamp = 3;
+    }
+    string record_id = 1;
+    repeated Owner owners = 2;
+    repeated Location locations = 3;
+}
+
+
+message RecordContainer {
+    repeated Record entries = 1;
+}
