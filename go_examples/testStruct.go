@@ -15,10 +15,10 @@ type employee struct {
 	empId int
 }
 
-func (p person) details() {
+func (p person) person_details() {
 	fmt.Println(p, " "+" I am a person")
 }
-func (e employee) details() {
+func (e employee) employee_details() {
 	fmt.Println(e, " "+"I am a employee")
 }
 
@@ -28,11 +28,13 @@ func main() {
 	fmt.Println(x.firstName)
 
 	p1 := person{"Raj", "Kumar", 32}
-	p1.details()
+	p1.person_details()
 	e1 := employee{person: person{"John", "Ponting", 30}, empId: 11}
-	e1.details()
+	e1.employee_details()
 	e2 := employee{person: p1, empId: 11}
-	e2.details()
+	e2.employee_details()
+
+	//p1.employee_details() will not compile
 
 	var y = map[string]int{"Kate": 28, "John": 37, "Raj": 20}
 	fmt.Println(y)
