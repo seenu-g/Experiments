@@ -16,4 +16,10 @@ func main() {
 	/*Diagonal function of rectangle package used
 	 */
 	fmt.Printf("diagonal of the rectangle %.2f ", rectangle.Diagonal(rectLen, rectWidth))
+
+	const Length int = 10
+	var area int
+	area = Length * Length
+	fmt.Printf("\n Area of square of length %d unit is  %d  units\n", Length, area)
+
 }

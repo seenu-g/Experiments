@@ -16,7 +16,7 @@ func findType(i interface{}) {
 		fmt.Printf("I don't to identify type %T!\n", v)
 	}
 }
-func findOS(){
+func findOS() {
 	fmt.Print("Go is running on ")
 	switch os := runtime.GOOS; os {
 	case "darwin":
@@ -30,7 +30,7 @@ func findOS(){
 	}
 }
 func main() {
-	
+
 	findType(21)
 	findType("hello")
 	findType(true)
@@ -38,9 +38,31 @@ func main() {
 
 	findOS()
 	HowFar()
+	TestFallThrough()
 }
 
-func HowFar(){
+func TestFallThrough() {
+	fmt.Print("Enter Number: ")
+	var input int
+	fmt.Scanln(&input)
+
+	switch input {
+	case 10:
+		fmt.Print("the value is 10 \n")
+	case 20:
+		fmt.Print("the value is 20 \n")
+	case 30:
+		fmt.Print("the value is 30 \n ")
+	case 40:
+		fmt.Print("the value is 40 \n")
+	case 1:
+		fmt.Print("fallover to default")
+		fallthrough
+	default:
+		fmt.Print(" It is not 10,20,30,40 \n ")
+	}
+}
+func HowFar() {
 	fmt.Println("When's Saturday?")
 	today := time.Now().Weekday()
 	switch time.Saturday {
