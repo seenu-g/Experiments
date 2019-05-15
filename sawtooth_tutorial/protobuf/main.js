@@ -2,6 +2,32 @@ const cbor = require('cbor')
 var protobuf = require("protobufjs");
 var protos = require("./payload.js")
 
+function Simple_display(payload){
+    console.log(payload)
+}
+function display(payload){
+    if(payload.action == protos.model.PayLoad.Action.CREATE_AGENT){
+         temp = payload.create_agent
+         // console.log(temp)
+         console.log(temp.name)
+    }
+    if(payload.action == protos.model.PayLoad.Action.CREATE_RECORD){
+        temp = payload.create_record
+                // console.log(temp)
+        console.log(temp.record_id, temp.latitude, temp.longitude)
+   }
+    if(payload.action == protos.model.PayLoad.Action.UPDATE_RECORD){
+        temp = payload.update_record
+        // console.log(temp)
+        console.log(temp.record_id, temp.latitude, temp.longitude)
+   }
+    if(payload.action == protos.model.PayLoad.Action.TRANSFER_RECORD){
+        temp = payload.transfer_record
+        // console.log(temp)
+        console.log(temp.record_id,temp.receiving_agent)
+   }
+}
+
 var createAgentMessage = protos.model.CreateAgentAction.create()
 createAgentMessage.name ="srinivasan"
 
@@ -22,19 +48,21 @@ transferRecordMessage.receiving_agent = 63
 var payload1 = protos.model.PayLoad.create()
 payload1.action = protos.model.PayLoad.Action.CREATE_AGENT;
 payload1.create_agent = createAgentMessage;
-console.log(payload1)
+display(payload1)
 
 var payload2 = protos.model.PayLoad.create()
 payload2.action = protos.model.PayLoad.Action.CREATE_RECORD;
 payload2.create_record = createRecordMessage;
-console.log(payload2)
+display(payload2)
 
 var payload3 = protos.model.PayLoad.create()
 payload3.action = protos.model.PayLoad.Action.UPDATE_RECORD;
 payload3.update_record = updateRecordMessage;
-console.log(payload3)
+display(payload3)
 
 var payload4 = protos.model.PayLoad.create()
 payload4.action = protos.model.PayLoad.Action.TRANSFER_RECORD;
 payload4.transfer_record = transferRecordMessage;
-console.log(payload4)
+display(payload4)
+
+
