@@ -49,9 +49,7 @@ contract ProductParts {
     function developPart(string  serial_number, string  part_type, string  creation_date) public returns (bytes32){
         //Create hash for data and check if it exists. If not, create the part and return the ID to the user
        
-        bytes32 part_hash = createHash(msg.sender, serial_number, part_type, creation_date); 
-        require(parts[part_hash].manufacturer == address(0), "Part ID already used");
-
+        bytes32 part_hash = createHash(msg.sender, serial_number, part_type, creation_date);
         Part memory new_part = Part(msg.sender, serial_number, part_type, creation_date);
         parts[part_hash] = new_part;
         return part_hash;
@@ -61,12 +59,10 @@ contract ProductParts {
         //Check whether all the parts exist. if yes,hash values and add to product mapping.
         uint i;
         for(i = 0;i < part_array.length; i++){
-            require(parts[part_array[i]].manufacturer != address(0), "Inexistent part used on product");
+            require(parts[part_array[i]].manufacturer != address(0), "Parts needs to have valid manufacturer");
         }
 
         bytes32 product_hash = createHash(msg.sender, serial_number, product_type, creation_date);
-        require(products[product_hash].manufacturer == address(0), "Product ID already used");
-
         Product memory new_product = Product(msg.sender, serial_number, product_type, creation_date, part_array);
         products[product_hash] = new_product;
         return product_hash;

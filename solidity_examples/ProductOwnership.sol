@@ -21,9 +21,7 @@ contract ProductOwnership{
         {
             (manufacturer, , , ) = pm.parts(p_hash);
         
-            require(currentPartOwner[p_hash] == address(0), "Part was already registered");
-            require(manufacturer == msg.sender, "Part was not made by requester");
-        
+            require(manufacturer == msg.sender, "Part first ownership can be done only by manufacturer");
             currentPartOwner[p_hash] = msg.sender;
             emit AssignPartOwnerEvent(p_hash, msg.sender);
         
@@ -31,9 +29,7 @@ contract ProductOwnership{
         {
             (manufacturer, , , ) = pm.products(p_hash);
         
-            require(currentProductOwner[p_hash] == address(0), "Product was already registered");
-            require(manufacturer == msg.sender, "Product was not made by requester");
-        
+            require(manufacturer == msg.sender, "Product first ownership can be done only by manufacturer");
             currentProductOwner[p_hash] = msg.sender;
             emit AssignProductOwnerEvent(p_hash, msg.sender);
         }
@@ -42,12 +38,12 @@ contract ProductOwnership{
     function changeOwnership(uint op_type, bytes32 p_hash, address to) public returns (bool) {
       //Check if the element exists and belongs to the user requesting ownership change
         if(op_type == uint(OperationType.PART)){
-            require(currentPartOwner[p_hash] == msg.sender, "Part is not owned by requester");
+            require(currentPartOwner[p_hash] == msg.sender, "You need to own Part to transfer owership");
             
             currentPartOwner[p_hash] = to;
             emit TransferPartEvent(p_hash, to);
         } else if (op_type == uint(OperationType.PRODUCT)){
-            require(currentProductOwner[p_hash] == msg.sender, "Product is not owned by requester");
+            require(currentProductOwner[p_hash] == msg.sender, "You need to own product to transfer owership");
             
             currentProductOwner[p_hash] = to;
             emit TransferProductEvent(p_hash, to);
