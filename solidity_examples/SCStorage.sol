@@ -1,31 +1,7 @@
 pragma solidity ^0.4.23;
-import { SCStorageOwner } from "./SCStorageOwner.sol";
-
-contract SCStorage is SCStorageOwner {
-    address public lastAccess;
+contract SCStorage {
     constructor() public {
-        permittedUsers[msg.sender] = 1;
-        emit PermitUser(msg.sender);
-    }
-    event PermitUser(address caller);
-    event DenyUser(address caller);
-    mapping(address => uint8) permittedUsers;
-    
-    function grantPermission(address _caller) public onlyOwner returns(bool)
-    {
-        permittedUsers[_caller] = 1;
-        emit PermitUser(_caller);
-        return true;
-    }
-    function denyPermission(address _caller) public onlyOwner returns(bool)
-    {
-        permittedUsers[_caller] = 0;
-        emit DenyUser(_caller);
-        return true;
-    }
-    modifier onlyPermittedCaller(){
-        require(permittedUsers[msg.sender] == 1,"Not Allowed");
-        _;
+
     }
     
     struct userStruct {
@@ -36,37 +12,31 @@ contract SCStorage is SCStorageOwner {
     } 
     mapping(address => userStruct) userMap;
     mapping(address => string) userRole;
-    userStruct userDetail;
     function setUser(address _userAddress,string _name,string _contactNo, string _role, bool _isActive, string _profileHash) 
-                     public onlyPermittedCaller returns(bool){
-        userDetail.name = _name;
-        userDetail.contactNo = _contactNo;
-        userDetail.isActive = _isActive;
-        userDetail.profileHash = _profileHash;
-        
-        userMap[_userAddress] = userDetail;
+                     public  returns(bool){
+        userMap[_userAddress] = userStruct(_name,_contactNo,_isActive,_profileHash);
         userRole[_userAddress] = _role;
         return true;
-    }  
-    
-    function getUser(address _userAddress) public onlyPermittedCaller 
-                                           view returns(string name,string contactNo, 
-                                           string role,bool isActive, string profileHash){
-        userStruct memory tmpData = userMap[_userAddress];
-        return (tmpData.name, tmpData.contactNo, userRole[_userAddress], tmpData.isActive, tmpData.profileHash);
     }
-    function getUserRole(address _userAddress) public onlyPermittedCaller view returns(string)
+    
+    function getUser(address _userAddress) public  
+                                           view returns(string name,string contactNo,
+                                           string role,bool isActive, string profileHash){
+        return (userMap[_userAddress].name, userMap[_userAddress].contactNo, userRole[_userAddress],
+                userMap[_userAddress].isActive, userMap[_userAddress].profileHash);
+    }
+    function getUserRole(address _userAddress) public  view returns(string)
     {
         return userRole[_userAddress];
     }
 
     mapping (address => string) nextAction;
-    function getNextAction(address _batchNo) public onlyPermittedCaller view returns(string)
+    function getNextAction(address _batchNo) public  view returns(string)
     {
         return nextAction[_batchNo];
     }
-
-    struct basicStruct {
+    
+        struct basicStruct {
         string registrationNo;
         string farmerName;
         string farmAddress;
@@ -74,34 +44,24 @@ contract SCStorage is SCStorageOwner {
         string importerName;
     }
     mapping (address => basicStruct) basicMap;
-    basicStruct basicDetailsData;
-        /*get batch basicDetails*/
-    function getBasicDetails(address _batchNo) 
-                             public onlyPermittedCaller view returns(string registrationNo,
-                             string farmerName, string farmAddress,
-                             string exporterName, string importerName) {
-        
-        basicStruct memory tmpData = basicMap[_batchNo];
-        return (tmpData.registrationNo,tmpData.farmerName,tmpData.farmAddress,tmpData.exporterName,tmpData.importerName);
-    }
-    
-    /*set batch basicDetails*/
     function setBasicDetails(string _registrationNo,string _farmerName,  string _farmAddress,
-                             string _exporterName,string _importerName) 
-                             public onlyPermittedCaller returns(address) {
+                             string _exporterName,string _importerName)
+                             public  returns(address) {
         
         uint tmpData = uint(keccak256(msg.sender, now));
         address batchNo = address(tmpData);
         
-        basicDetailsData.registrationNo = _registrationNo;
-        basicDetailsData.farmerName = _farmerName;
-        basicDetailsData.farmAddress = _farmAddress;
-        basicDetailsData.exporterName = _exporterName;
-        basicDetailsData.importerName = _importerName;
-        
-        basicMap[batchNo] = basicDetailsData;
-        nextAction[batchNo] = 'FARM_INSPECTION';   
+        basicMap[batchNo] = basicStruct(_registrationNo,_farmerName,_farmAddress,_exporterName,_importerName);
+        nextAction[batchNo] = 'FARM_INSPECT';
         return batchNo;
+    }
+    function getBasicDetails(address _batchNo)
+                             public  view returns(string registrationNo,
+                             string farmerName, string farmAddress,
+                             string exporterName, string importerName) {
+        
+        return (basicMap[_batchNo].registrationNo,basicMap[_batchNo].farmerName,basicMap[_batchNo].farmAddress,
+                basicMap[_batchNo].exporterName,basicMap[_batchNo].importerName);
     }
     
     struct farmInspectionStruct {
@@ -109,19 +69,14 @@ contract SCStorage is SCStorageOwner {
         string seedType;
         string fertilizerUsed;
     }
-    farmInspectionStruct farmInspectionData;
     mapping (address => farmInspectionStruct) farmInspectionMap;
     function setFarmInspectionData(address batchNo,string _family,string _seedType,
-                                    string _fertilizer) public onlyPermittedCaller returns(bool){
-        farmInspectionData.coffeeFamily = _family;
-        farmInspectionData.seedType = _seedType;
-        farmInspectionData.fertilizerUsed = _fertilizer;
-        
-        farmInspectionMap[batchNo] = farmInspectionData;
-        nextAction[batchNo] = 'HARVESTER'; 
+                                    string _fertilizer) public returns(bool){
+        farmInspectionMap[batchNo] = farmInspectionStruct(_family,_seedType,_fertilizer);
+        nextAction[batchNo] = 'HARVEST'; 
         return true;
     }
-    function getFarmInspectionData(address batchNo) public onlyPermittedCaller view returns (string coffeeFamily,string typeOfSeed,string fertilizerUsed){
+    function getFarmInspectionData(address batchNo) public  view returns (string coffeeFamily,string typeOfSeed,string fertilizerUsed){
         
         farmInspectionStruct memory tmpData = farmInspectionMap[batchNo];
         return (tmpData.coffeeFamily, tmpData.seedType, tmpData.fertilizerUsed);
@@ -135,22 +90,17 @@ contract SCStorage is SCStorageOwner {
     harvestStruct harvestData;
     mapping (address => harvestStruct) harvestMap;
     function setHarvestData(address batchNo, string _cropVariety,string _temperature,
-                              string _humidity) public onlyPermittedCaller returns(bool){
-        harvestData.cropVariety = _cropVariety;
-        harvestData.temperature = _temperature;
-        harvestData.humidity = _humidity;
-
-        harvestMap[batchNo] = harvestData;
-        nextAction[batchNo] = 'EXPORTER'; 
+                              string _humidity) public  returns(bool){
+        harvestMap[batchNo] = harvestStruct(_cropVariety,_temperature,_humidity);
+        nextAction[batchNo] = 'EXPORT'; 
         return true;
     }
-    function getHarvestData(address batchNo) public onlyPermittedCaller view returns(string cropVariety,
+    function getHarvestData(address batchNo) public  view returns(string cropVariety,
                                                                 string temperature, string humidity){
-        harvestStruct memory tmpData = harvestMap[batchNo];
-        return (tmpData.cropVariety, tmpData.temperature, tmpData.humidity);
+        return (harvestMap[batchNo].cropVariety, harvestMap[batchNo].temperature, harvestMap[batchNo].humidity);
     }
-
-    struct exportStruct {
+    
+     struct exporterStruct {
         string destinationAddress;
         string shipName;
         string shipNo;
@@ -160,32 +110,14 @@ contract SCStorage is SCStorageOwner {
         uint256 plantNo;
         uint256 exporterId;
     }
-    exportStruct exportData;
-    mapping (address => exportStruct) exportMap;
-    function setExportData(address batchNo,uint256 _quantity,string _destinationAddress,
-                              string _shipName,string _shipNo,uint256 _estimateDateTime,
-                              uint256 _exporterId) public onlyPermittedCaller returns(bool){        
-        exportData.quantity = _quantity;
-        exportData.destinationAddress = _destinationAddress;
-        exportData.shipName = _shipName;
-        exportData.shipNo = _shipNo;
-        exportData.departureDateTime = now;
-        exportData.estimateDateTime = _estimateDateTime;
-        exportData.exporterId = _exporterId;
-        
-        exportMap[batchNo] = exportData;
-        nextAction[batchNo] = 'IMPORTER'; 
-        return true;
+    mapping (address => exporterStruct) exportMap;
+    function getExportData(address batchNo) public view returns(uint256 quantity,
+                                            string destinationAddress,string shipName,string shipNo,
+                                             uint256 plantNo,uint256 exporterId){
+        return (exportMap[batchNo].quantity,exportMap[batchNo].destinationAddress,
+                exportMap[batchNo].shipName, exportMap[batchNo].shipNo,
+                exportMap[batchNo].plantNo, exportMap[batchNo].exporterId);
     }
-    function getExportData(address batchNo) public onlyPermittedCaller view returns(uint256 quantity,
-                                                                string destinationAddress,string shipName,string shipNo,
-                                                                uint256 departureDateTime, uint256 estimateDateTime,uint256 exporterId){       
-        exportStruct memory tmpData = exportMap[batchNo];
-        return (tmpData.quantity, tmpData.destinationAddress, tmpData.shipName, tmpData.shipNo, 
-                tmpData.departureDateTime,tmpData.estimateDateTime, tmpData.exporterId);
-    }
-
-
     struct importStruct {
         uint256 quantity;
         uint256 arrivalDateTime;
@@ -196,36 +128,7 @@ contract SCStorage is SCStorageOwner {
         string warehouseName;
         string warehouseAddress;
     }
-    importStruct importData;
     mapping (address => importStruct) importMap;
-    function setImportData(address batchNo,uint256 _quantity, 
-                              string _shipName,string _shipNo,string _transportInfo,
-                              string _warehouseName,string _warehouseAddress, uint256 _importerId) 
-                              public onlyPermittedCaller returns(bool){
-        
-        importData.quantity = _quantity;
-        importData.shipName = _shipName;
-        importData.shipNo = _shipNo;
-        importData.arrivalDateTime = now;
-        importData.transportInfo = _transportInfo;
-        importData.warehouseName = _warehouseName;
-        importData.warehouseAddress = _warehouseAddress;
-        importData.importerId = _importerId;
-        
-        importMap[batchNo] = importData;
-        nextAction[batchNo] = 'PROCESSOR'; 
-        return true;
-    }
-    
-    function getImportData(address batchNo) 
-                             public onlyPermittedCaller view returns(uint256 quantity,uint256 importerId,
-                             string shipName,string shipNo,uint256 arrivalDateTime,
-                             string transportInfo,string warehouseName,string warehouseAddress){
-        
-        importStruct memory tmpData = importMap[batchNo];
-        return (tmpData.quantity,tmpData.importerId, tmpData.shipName,tmpData.shipNo,tmpData.arrivalDateTime, 
-                tmpData.transportInfo,tmpData.warehouseName,tmpData.warehouseAddress);    
-    }
     struct processStruct {
         uint256 quantity;
         uint256 rostingDuration;
@@ -235,31 +138,5 @@ contract SCStorage is SCStorageOwner {
         string processorName;
         string processorAddress;
     }
-    processStruct processData;
     mapping (address => processStruct) processMap;
-    function setProcessData(address batchNo,uint256 _quantity,string _temperature,
-                              uint256 _rostingDuration,string _internalBatchNo,uint256 _packageDateTime,
-                              string _processorName,string _processorAddress) 
-                              public onlyPermittedCaller returns(bool){
-        processData.quantity = _quantity;
-        processData.temperature = _temperature;
-        processData.rostingDuration = _rostingDuration;
-        processData.internalBatchNo = _internalBatchNo;
-        processData.packageDateTime = _packageDateTime;
-        processData.processorName = _processorName;
-        processData.processorAddress = _processorAddress;
-
-        processMap[batchNo] = processData;
-        nextAction[batchNo] = 'DONE'; 
-        return true;
-    }
-
-    function getProcessData( address batchNo) public onlyPermittedCaller view returns(uint256 quantity,string temperature,
-                              uint256 rostingDuration, string internalBatchNo,uint256 packageDateTime,
-                              string processorName,string processorAddress){
-
-        processStruct memory tmpData = processMap[batchNo];
-        return (tmpData.quantity, tmpData.temperature,tmpData.rostingDuration,tmpData.internalBatchNo, 
-                tmpData.packageDateTime,tmpData.processorName,tmpData.processorAddress);
-    }
-}   
+}

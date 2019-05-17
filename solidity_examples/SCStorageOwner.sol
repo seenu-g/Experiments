@@ -2,29 +2,25 @@ pragma solidity ^0.4.23;
 
 contract SCStorageOwner {
   address public owner;
-  event OwnershipRenounced(address indexed previousOwner);
-  event OwnershipTransferred(
-    address indexed previousOwner,
-    address indexed newOwner
-  );
+  event OwnershipRenounced(address previousOwner);
+  event OwnershipTransferred( address previousOwner, address  newOwner);
 
   constructor() public {
     owner = msg.sender;
   }
-  modifier onlyOwner() {
+ 
+  function transferOwnership(address newOwner) public  {
     require(msg.sender == owner,"Not owner");
-    _;
-  }
-
-  /** Allows the current owner to transfer ownership to a newOwner.*/
-  function transferOwnership(address newOwner) public onlyOwner {
-    require(newOwner != address(0));
-    emit OwnershipTransferred(owner, newOwner);
+    require(newOwner != address(0),"not null address");
+    address previousOwner = owner;
     owner = newOwner;
+    emit OwnershipTransferred(previousOwner, newOwner);
+
   }
 
-  function renounceOwnership() public onlyOwner {
-    emit OwnershipRenounced(owner);
+  function renounceOwnership() public  {
+    require(msg.sender == owner,"Not owner");
     owner = address(0);
+    emit OwnershipRenounced(owner);
   }
 }
