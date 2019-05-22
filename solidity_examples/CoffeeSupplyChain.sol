@@ -1,21 +1,18 @@
 pragma solidity ^0.4.23;
 import "./SCStorage.sol";
-import "./Ownership.sol";
 
-contract CoffeeSupplyChain is Ownership
+contract CoffeeSupplyChain 
 {
   
     event CultivationStarted(address indexed user, address indexed batchNo);
     event InspectionComplete(address indexed user, address indexed batchNo);
     event HarvestComplete(address indexed user, address indexed batchNo);
-    event ExportComplete(address indexed user, address indexed batchNo);
-    event ImportComplete(address indexed user, address indexed batchNo);
     event ProcessComplete(address indexed user, address indexed batchNo);
 
-    modifier isValidPerformer(address batchNo, string role) {
+     modifier isValidPerformer(address batchNo, string role) {
     
-        require(keccak256(scStore.getUserRole(msg.sender)) == keccak256(role));
-        require(keccak256(scStore.getNextAction(batchNo)) == keccak256(role));
+        require(keccak256(abi.encode(scStore.getUserRole(msg.sender))) == keccak256(abi.encode(role)));
+        require(keccak256(abi.encode(scStore.getNextAction(batchNo))) == keccak256(abi.encode(role)));
         _;
     }
     
@@ -74,65 +71,6 @@ contract CoffeeSupplyChain is Ownership
                                     
         bool status = scStore.setHarvestData(_batchNo, _cropVariety, _temperatureUsed, _humidity);          
         emit HarvestComplete(msg.sender, _batchNo);
-        return (status);
-    }
-        
-    function getExporterData(address _batchNo) public view returns (uint256 quantity,
-                                               string destinationAddress,string shipName,string shipNo,
-                                               uint256 departureDateTime,uint256 estimateDateTime,uint256 exporterId) {
-       
-        (quantity,destinationAddress,shipName,shipNo,
-        departureDateTime,estimateDateTime,exporterId) =  scStore.getExportData(_batchNo);  
-       
-        return (quantity,destinationAddress,shipName,shipNo,
-                departureDateTime,estimateDateTime,exporterId);
-    }
-        
-    function updateExporterData(address _batchNo,uint256 _quantity,    
-                                string _destinationAddress,string _shipName,string _shipNo,
-                                uint256 _estimateDateTime,uint256 _exporterId) 
-                                public isValidPerformer(_batchNo,'EXPORTER') returns(bool) {        
-        bool status = scStore.setExportData(_batchNo, _quantity, _destinationAddress, _shipName,_shipNo, _estimateDateTime,_exporterId);  
-        emit ExportComplete(msg.sender, _batchNo);
-        return (status);
-    }
-        
-    function getImporterData(address _batchNo) public view returns (uint256 quantity,string shipName,
-                                                string shipNo,uint256 arrivalDateTime,string transportInfo,
-                                                string warehouseName,string warehouseAddress,uint256 importerId) {
-        (quantity,importerId,shipName,shipNo,arrivalDateTime,
-         transportInfo,warehouseName,warehouseAddress) =  scStore.getImportData(_batchNo);  
-         
-         return (quantity,shipName,shipNo,arrivalDateTime,
-                 transportInfo,warehouseName, warehouseAddress,importerId);
-    }    
-    function updateImporterData(address _batchNo,
-                                uint256 _quantity,string _shipName,string _shipNo,
-                                string _transportInfo,string _warehouseName, string _warehouseAddress,
-                                uint256 _importerId) 
-                                public isValidPerformer(_batchNo,'IMPORTER') returns(bool) {
-        bool status = scStore.setImportData(_batchNo, _quantity, _shipName, _shipNo, _transportInfo,_warehouseName,_warehouseAddress,_importerId);          
-        emit ImportComplete(msg.sender, _batchNo);
-        return (status);
-    }
-    
-    function getProcessorData(address _batchNo) public view returns (uint256 quantity,string temperature,
-                                               uint256 _rostingDuration,string _internalBatchNo,uint256 _packageDateTime,
-                                               string _processorName,string _processorAddress) {
-        (quantity,temperature,_rostingDuration,_internalBatchNo,
-         _packageDateTime,_processorName,_processorAddress) =scStore.getProcessData(_batchNo);   
-         return (quantity,temperature,_rostingDuration,_internalBatchNo,_packageDateTime,
-                 _processorName,_processorAddress);
-    }
-
-    function updateProcessorData(address _batchNo,uint256 _quantity,string _temperature,
-                              uint256 _rostingDuration,string _internalBatchNo,uint256 _packageDateTime,
-                              string _processorName,string _processorAddress)
-                              public isValidPerformer(_batchNo,'PROCESSOR') returns(bool) {
-        bool status = scStore.setProcessData(_batchNo,_quantity,_temperature,_rostingDuration,
-                                             _internalBatchNo,_packageDateTime,_processorName,
-                                             _processorAddress);
-        emit ProcessComplete(msg.sender, _batchNo);
         return (status);
     }
 }
