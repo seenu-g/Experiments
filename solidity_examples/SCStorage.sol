@@ -48,9 +48,7 @@ contract SCStorage {
                              string _exporterName,string _importerName)
                              public  returns(address) {
         
-        uint tmpData = uint(keccak256(msg.sender, now));
-        address batchNo = address(tmpData);
-        
+       address batchNo = address(keccak256(abi.encodePacked(_registrationNo,_farmerName,_farmAddress,_exporterName,_importerName)));  
         basicMap[batchNo] = basicStruct(_registrationNo,_farmerName,_farmAddress,_exporterName,_importerName);
         nextAction[batchNo] = 'FARM_INSPECT';
         return batchNo;
@@ -100,35 +98,6 @@ contract SCStorage {
         return (harvestMap[batchNo].cropVariety, harvestMap[batchNo].temperature, harvestMap[batchNo].humidity);
     }
     
-     struct exporterStruct {
-        string destinationAddress;
-        string shipName;
-        string shipNo;
-        uint256 quantity;
-        uint256 departureDateTime;
-        uint256 estimateDateTime;
-        uint256 plantNo;
-        uint256 exporterId;
-    }
-    mapping (address => exporterStruct) exportMap;
-    function getExportData(address batchNo) public view returns(uint256 quantity,
-                                            string destinationAddress,string shipName,string shipNo,
-                                             uint256 plantNo,uint256 exporterId){
-        return (exportMap[batchNo].quantity,exportMap[batchNo].destinationAddress,
-                exportMap[batchNo].shipName, exportMap[batchNo].shipNo,
-                exportMap[batchNo].plantNo, exportMap[batchNo].exporterId);
-    }
-    struct importStruct {
-        uint256 quantity;
-        uint256 arrivalDateTime;
-        uint256 importerId;
-        string shipName;
-        string shipNo;
-        string transportInfo;
-        string warehouseName;
-        string warehouseAddress;
-    }
-    mapping (address => importStruct) importMap;
     struct processStruct {
         uint256 quantity;
         uint256 rostingDuration;
