@@ -15,7 +15,7 @@ contract ProductOwnership{
         pm = ProductParts(prod_contract_addr);
     }
 
-    function addOwnership(uint op_type, bytes32 p_hash) public returns (bool) {
+    function addOwnership(uint8 op_type, bytes32 p_hash) public returns (bool) {
         address manufacturer;
         if(op_type == uint(OperationType.PART))
         {
@@ -35,7 +35,7 @@ contract ProductOwnership{
         }
     }
 
-    function changeOwnership(uint op_type, bytes32 p_hash, address to) public returns (bool) {
+    function changeOwnership(uint8 op_type, bytes32 p_hash, address to) public returns (bool) {
       //Check if the element exists and belongs to the user requesting ownership change
         if(op_type == uint(OperationType.PART)){
             require(currentPartOwner[p_hash] == msg.sender, "Part is not owned by requester");
