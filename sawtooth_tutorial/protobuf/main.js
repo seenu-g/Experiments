@@ -31,7 +31,7 @@ function display(payload){
 var createAgentMessage = protos.model.CreateAgentAction.create()
 createAgentMessage.name ="srinivasan"
 
-var createRecordMessage = protos.model. CreateRecordAction.create()
+var createRecordMessage = protos.model.CreateRecordAction.create()
 createRecordMessage.record_id = 1
 createRecordMessage.latitude = 23
 createRecordMessage.longitude = 43
@@ -49,6 +49,7 @@ var payload1 = protos.model.PayLoad.create()
 payload1.action = protos.model.PayLoad.Action.CREATE_AGENT;
 payload1.create_agent = createAgentMessage;
 display(payload1)
+
 
 var payload2 = protos.model.PayLoad.create()
 payload2.action = protos.model.PayLoad.Action.CREATE_RECORD;
