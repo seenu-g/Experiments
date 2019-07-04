@@ -1,6 +1,6 @@
 
 const {prepareTransactions} = require('./prepareTransaction')
-const {SubmitToServer} = require('./sumitToServer.js')
+const {SubmitToServer} = require('./submitToServer.js')
  const  KeyManager = require('./keymanager');
 
 var args = process.argv;
