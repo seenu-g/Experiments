@@ -2,7 +2,6 @@
 
  create_account=(state,id,name,savings,checking)=>{
     new_account_data = make_Account_To_JSON(id,name,savings,checking)
-    console.log("santhosh is ");
     save_account(state,new_account_data,id)
    }
 
