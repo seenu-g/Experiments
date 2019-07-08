@@ -1,0 +1,16 @@
+namespace org.india.votenetwork
+
+participant Voter identified by email {
+  o String email
+  o Boolean voted default=false
+}
+
+asset Candidate identified by name {
+  o String name
+  o Integer votes default=0
+}
+
+transaction CastVote {
+  --> Voter voter
+  --> Candidate candidate
+}
