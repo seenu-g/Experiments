@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import datetime
 class student:
         def __init__(self, roll, name):
