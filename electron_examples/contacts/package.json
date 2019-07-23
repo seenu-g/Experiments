@@ -1,0 +1,16 @@
+{
+  "name": "contacts",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "electron app.js"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^3.0.2"
+  },
+  "dependencies": {
+    "fs": "0.0.1-security",
+    "jquery": "^3.4.1"
+  }
+}
