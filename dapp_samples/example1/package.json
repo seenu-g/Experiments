@@ -1,0 +1,22 @@
+{
+    "name": "example1",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "dependencies": {
+      "abi-decoder": "^1.2.0",
+      "body-parser": "^1.18.3",
+      "cors": "^2.8.4",
+      "express": "^4.16.4",
+      "jsonwebtoken": "^8.3.0",
+      "lower-case": "^1.1.4",
+      "mongoose": "^5.3.4",
+      "node-datetime": "^2.1.2",
+      "solc": "^0.4.25",
+      "web3": "^0.20.7"
+    }
+}
+  
