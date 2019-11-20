@@ -38,6 +38,19 @@ def fahrenheit_to_celsius():
     else:
             print("Empty. You did not enter a value. Bye") 
 
+def celsius_to_fahrenheit(): 
+    temp_str = input("Enter a celsius temperature: ")
+    if temp_str:
+        if temp_str.isdigit():  
+            temp = int(temp_str)
+            newTemp = (9/5 * temp) + 32
+            print("The celsius temperature",temp,"is equivalent to ",end='')
+            print(newTemp,"degrees Fahrenheit")
+        else:
+            print("You must enter a number. Bye")  
+    else:
+            print("Empty. You did not enter a value. Bye") 
+            
 def inches_to_feet(inches):
     extra_inches = inches % 12  # division by integer with fraction thrown away
     feet = (inches - extra_inches)/12
@@ -67,3 +80,4 @@ inches_to_feet(125)
 
 """
 countdown()
+celsius_to_fahrenheit()
