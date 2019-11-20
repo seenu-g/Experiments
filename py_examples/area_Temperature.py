@@ -57,8 +57,14 @@ def inches_to_feet(inches):
     print(inches," inches = ",feet," feet and ",extra_inches,"inches") 
 
 def countdown():
-    for ct in range(10,0,-1):
+   # for ct in range(10,0,-1):
+   #     print("\n",ct,end=' ')
+   # print("\n BLASTOFF")
+    
+    ct =10
+    while ct >0:
         print("\n",ct,end=' ')
+        ct = ct -1
     print("\n BLASTOFF")
     
 """
