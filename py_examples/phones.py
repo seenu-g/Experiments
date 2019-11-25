@@ -8,14 +8,16 @@ phones =[["srinivasan","9945503508"],
              ["Mridula","9980803508"]]
 file_name = "phones.csv"
 import csv
+import os
 
 def load_phone_list():
-    in_file = open(file_name,"r+")
-    phones = []
-    for row in csv.reader(in_file):
-        phones.append(row)
-        #print (row) # display row
-    in_file.close()
+    if os.access(file_name,os.F_OK) :
+        in_file = open(file_name,"r+")
+        phones = []
+        for row in csv.reader(in_file):
+            phones.append(row)
+            #print (row) # display row
+        in_file.close()
 
 def save_phone_list():
     out_file = open(file_name,"w+")
