@@ -30,6 +30,9 @@ def print_employee2(employee_list):
 thislist = ["apple", "banana", "cherry"]
 thislist.append("orange")
 print(thislist)
+print("thislist[1:3]",thislist[1:3])
+print("thislist[1:2]",thislist[1:2])
+print("thislist[2:4]",thislist[2:4])
 
 thatlist = list(("Ray", "Eric", "Steve"))
 print("list created using constructor ",thatlist)
@@ -62,6 +65,8 @@ print(thislist)
 
 thislist.insert(1, "avacado")
 print(thislist)
+
+print("thislist + thatlist", thislist + thatlist)
 
 
 thatlist = range(5,125,10)

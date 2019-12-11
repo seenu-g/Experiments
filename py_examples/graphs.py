@@ -65,3 +65,12 @@ def draw_circle():
     plt.axis('scaled')
     plt.show()
 
+def main():
+    draw_line_graph()
+    draw_bar_graph()
+    draw_multiple_bar_graph()
+
+# this means that if this script is executed, then 
+# main() will be executed
+if __name__ == '__main__':
+    main()

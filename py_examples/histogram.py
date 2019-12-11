@@ -58,3 +58,15 @@ def draw_bar_graph() :
 
     labels = ax.get_xticklabels()
     plt.setp(labels, rotation=45, horizontalalignment='right')
+    
+def main():
+    #draw_histogram_with_axis_labels()
+    #annotate_text()
+    #draw_bar_graph()
+    a=np.arange(60).reshape(3,4,5)
+    print(a)
+
+# this means that if this script is executed, then 
+# main() will be executed
+if __name__ == '__main__':
+    main()
