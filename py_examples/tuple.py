@@ -13,6 +13,11 @@ if "cherry" in thistuple:
       print("Yes, 'cherry' is in the fruits tuple")
 index = 2
 print ("Item at index 2 : ",thistuple[2])
+
+try:
+    del(thistuple[1])
+except:
+    print("You cannot delete from tuple \n")
 try:
     thistuple[1] = "blackcurrant"
     print(thistuple)
@@ -25,4 +30,13 @@ try:
 except:
     print("You can delete tuple. Exception shown as the program printed deleted tuple")
 
+def delete(tupleSample, element):
+    tempList = list(tupleSample) 
+    tempList.remove(element)
+    tupleSample = tuple(tempList)
+    return tupleSample
 
+animals = ['cat', 'dog', 'rabbit', 'guinea pig']
+print("before deleting \n",animals)
+deleted_rabbit = delete(animals,'rabbit')
+print("after deleting rabbit using list conversion \n",deleted_rabbit)
