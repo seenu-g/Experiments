@@ -8,7 +8,8 @@ Created on Wed Dec 11 22:08:24 2019
 #pip install virtualenvwrapper-win
 #pip install Flask
 #pip install flask-httpauth
-from flask import Flask, jsonify,abort, make_response, url_for
+#pip install flask_restful
+from flask import Flask, jsonify,abort, request, make_response, url_for
 from flask_httpauth import HTTPBasicAuth
 
 app = Flask(__name__)
@@ -29,6 +30,12 @@ def unauthorized():
 def index():
     return "Hello, World!"
 
+@app.route('/home', methods = ['GET', 'POST']) 
+def home(): 
+    if(request.method == 'GET'): 
+        data = "Welcome HOME"
+        return jsonify({'data': data}) 
+    
 actions = [
     {
         'id': 1,
@@ -84,6 +91,6 @@ def get_actionURLs():
 @app.errorhandler(404)
 def not_found(error):
     return make_response(jsonify({'error': 'Not found'}), 404)
-
+    
 if __name__ == '__main__':
     app.run(debug=True)
