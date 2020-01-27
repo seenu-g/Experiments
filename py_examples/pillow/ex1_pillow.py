@@ -4,7 +4,7 @@ from io import BytesIO
 import sys
 
 path='/Users/srinivasang/code/Experiments/py_examples/pillow/'
-
+# An image can be cropped: that is, a piece can be cut out to create a new image.
 def crop_image(input_file, cropped_file) :
     try:
         img = Image.open(input_file)
