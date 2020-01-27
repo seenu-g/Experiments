@@ -73,6 +73,7 @@ def main() :
    save_image(url_image,save_file_as,save_file_type)
 
    grayscale = url_image.convert('L')
+   grayscale.save(path + 'gray_scaled.jpg')
    #grayscale.show()
 
    img = load_image(save_file_as)
