@@ -38,6 +38,17 @@ def draw_rectangle() :
     img.save(path + 'rectangle.png')
     img.show()
 
+def create_thumbnail_image(input_file) :
+    img = load_image(input_file)
+    print(img.format, img.size, img.mode,img.palette)
+    size = (128, 128)
+    try :
+        img.thumbnail(size)
+    except Exception:
+         print("error in thumbnail process")        
+    finally:
+        save_image(img, path + 'thumbnail.png','png')
+
 def create_watermark_image(input_file) :
     img = load_image(input_file)
     print(img.format, img.size, img.mode)
@@ -73,7 +84,8 @@ def main() :
         print("Unable to save image sid.jpg as blurred.png")  
 
    create_watermark_image(path + 'blurred.png')
-   
+   create_thumbnail_image(path + 'blurred.png')
+
 # this means that if this script is executed, then 
 # main() will be executed
 if __name__ == '__main__':
