@@ -22,6 +22,10 @@ def df_drop_column() :
 
     old_frame['Qualification'] = qualification # adds  column
     print(old_frame)
+    
+    old_frame.drop(columns=['Height', 'Qualification'], axis=1, inplace=True)								
+    print(old_frame) # 2 columns are dropped in one shot
+    
 
 def df_drop_row() :
     data = {'name': ['Jason', 'Molly', 'Tina', 'Jake', 'Amy'], 
