@@ -1,0 +1,28 @@
+<collection shelf="New Arrivals">
+<book title="Enemy Behind">
+<type>War, Thriller</type>
+<year>2003</year>
+<rating>PG</rating>
+<stars>10</stars>
+<description>Talk about a US-Japan war</description>
+</book>
+<book title="Triggers">
+<type>Self Help</type>
+<year>1989</year>
+<rating>R</rating>
+<stars>8</stars>
+<description>A scientific fiction</description>
+</book>
+<book title="Who stole my cheese">
+<type>Anime, Action</type>
+<rating>PG</rating>
+<stars>10</stars>
+<description>Good book</description>
+</book>
+<book title="Harry Potter">
+<type>Comedy</type>
+<rating>PG</rating>
+<stars>2</stars>
+<description>Viewable boredom</description>
+</book>
+</collection>
