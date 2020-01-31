@@ -22,7 +22,7 @@ def printXML(xmlfile) :
 
 path='/Users/srinivasang/code/Experiments/py_examples/'
 def main() :
-    printXML(path + "books.xml")
+    printXML("books.xml") # remove path in windows. in linux make it path +"books.xml"
 
 if __name__ =='__main__':
     main()
