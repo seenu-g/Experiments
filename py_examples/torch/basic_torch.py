@@ -49,6 +49,8 @@ def numpy_to_tensor() :
     print(b)
     
 def main() :
+    use_cuda = torch.cuda.is_available()
+    print("use_cuda = torch.cuda.is_available() :", use_cuda)
     #basic_func()
     #add()
     #load_boston_data()
