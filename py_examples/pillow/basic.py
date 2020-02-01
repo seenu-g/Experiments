@@ -3,7 +3,9 @@ import requests
 from io import BytesIO
 
 path='/Users/srinivasang/code/Experiments/py_examples/pillow/'
-
+#The mode of an image defines the type and depth of a pixel in the image. 
+#Each pixel uses the full range of the bit depth. 
+#So a 1-bit pixel has a range of 0-1, an 8-bit pixel has a range of 0-255
 def load_imageURL(imageURL) : 
     try:
         response = requests.get(imageURL)
