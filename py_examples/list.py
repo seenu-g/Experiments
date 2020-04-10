@@ -92,3 +92,16 @@ except:
 employees =[["Suraj",1,20000],["Naveen",2,20000],["Neha",3,20000],["Meghna",4,20000]]
 #print_employee(employees)
 print_employee2(employees)
+
+student_marks = [["Mridula",1,96],["Mrinalini",2,97],["Sujata",3,91]]
+for index in range(3) :
+    print(student_marks[index])
+    
+student_marks.extend(employees)
+print("Extended by employees",student_marks)
+student_marks.remove(["Naveen",2,20000])
+print("\n Removed Naveen",student_marks)
+del student_marks[-1]
+print("\n Removed last element in list",student_marks)
+
+employees.append(["Mridula",3,20000])
