@@ -25,6 +25,5 @@ def write_csv_file(out_file_name):
        csv.writer(out_file).writerow(item)
     out_file.close()
     
+write_csv_file("family.csv")
 read_csv_file("family.csv")
-write_csv_file("family1.csv")
-read_csv_file("family1.csv")

@@ -87,3 +87,8 @@ print("\n After deletion",student_marks)
 print("\n marks in Science")
 for name in student_marks:
       print(name,(student_marks[name])["Science"])
+      
+try:
+   del student_marks["Srini"]
+except:
+    print("Exception shown as the program tried to delete element not present")
