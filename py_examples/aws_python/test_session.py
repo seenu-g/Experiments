@@ -53,6 +53,10 @@ def get_bucket_policy(bucket_name):
         print(" Bucket Policy:",response['Policy'])
         
 def main() :
+    iam = boto3.resource('iam')
+    current_user = iam.CurrentUser()
+    print("Current user is ",current_user)
+    
     session = get_session_details()
     get_local_user_profiles(session)
     get_current_user(session)
