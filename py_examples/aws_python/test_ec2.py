@@ -69,7 +69,29 @@ def remove_instance(ec2,id) :
     except Exception as e:
         print(e)
         return False
+
+def get_instanced(ec2):
+    for instance in ec2.instances.all():
+     print(
+         "Id: {0}\nPlatform: {1}\nType: {2}\nPublic IPv4: {3}\nAMI: {4}\nState: {5}\n".format(
+         instance.id, instance.platform, instance.instance_type, instance.public_ip_address, instance.image.id, instance.state
+         )
+     )
+
+def modify_instance(ec2,id):
+    # choose an EC2 instance with id
+    instance_id = id
+    # Stop the instance
+    ec2.stop_instances(InstanceIds=[instance_id])
+    waiter=ec2.get_waiter('instance_stopped')
+    waiter.wait(InstanceIds=[instance_id])
     
+    # Change the instance type
+    ec2.modify_instance_attribute(InstanceId=instance_id, Attribute='instanceType', Value='t2.small')
+
+   # Start the instance
+   ec2.start_instances(InstanceIds=[instance_id])
+   
 # Create IAM user with programmatic access and also attache the policy "AmazonEC2FullAccess"
 # Confiugr this IAM user using aws configure to run the code.
 def main():
