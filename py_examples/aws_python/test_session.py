@@ -1,5 +1,6 @@
 import boto3
-
+# Create IAM user with programmatic access and also attache the policy "IAMFullAccess"
+# Confiugr this IAM user using aws configure to run the code.
 def get_session_details():
     # Create an S3 client
     session = boto3.session.Session()
@@ -95,7 +96,25 @@ def get_users(iam):
     except Exception as e :
         print(e)
         return False
-        
+
+def get_users_permission(iam):
+    for user_detail in iam.get_account_authorization_details(Filter=['User'])['UserDetailList']:
+        policyname = []
+        policyarn = []
+         # find each policy attached to the user
+        for policy in user_detail['AttachedManagedPolicies']:
+            policyname.append(policy['PolicyName'])
+            policyarn.append(policy['PolicyArn'])
+            print("User: {0}\nUserID: {1}\nPolicyName: {2}\nPolicyARN: {3}\n".format(
+                    user_detail['UserName'], user_detail['UserId'],
+                    policy['PolicyName'], policy['PolicyArn']
+                )
+            )
+    print("Found following PolicyNames \n",policyname)
+    print("Found PolicyYarns \n",policyarn)
+
+# Create IAM user with programmatic access and also attache the policy "IAMFullAccess"
+# Confiugr this IAM user using aws configure to run the code.
 def main() :
 
     session = get_session_details()
@@ -104,7 +123,7 @@ def main() :
 
     iam = boto3.client('iam')    
 
-    get_user(iam)
+    #get_user(iam)
     new_user ="mili"
     #create_user(iam,new_user)
     #get_user(iam,new_user)
@@ -114,6 +133,8 @@ def main() :
     #attach_policy(iam,new_user,ec2_policy)
     #detach_policy(iam,new_user,ec2_policy)
     #delete_user(iam,new_user)
+    
+    get_users_permission(iam)
     
 # this means that if this script is executed, then 
 # main() will be executed
