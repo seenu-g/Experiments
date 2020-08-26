@@ -42,6 +42,9 @@ def get_buckets(s3_client):
     if(response!= None) :
         # Get a list of all bucket names from the response
         buckets = [bucket['Name'] for bucket in response['Buckets']]
+        #print(response['Buckets'])
+        #dates = [bucket['CreationDate'] for bucket in response['Buckets']]
+        
         # Print out the bucket list
         print("Bucket List: %s" % buckets)
     else :
@@ -86,13 +89,13 @@ def main() :
     s3_resource = boto3.resource('s3')
 
     get_buckets(s3_client)
-    bucket_name = create_bucket(s3_client,create_bucket_name("soai"))
+    """ bucket_name = create_bucket(s3_client,create_bucket_name("soai"))
     upload_object(s3_resource,bucket_name,file_name="/Users/srinivasang/Desktop/Rajesh.pdf",key_name="temp.pdf")
     upload_object(s3_resource,bucket_name,file_name="/Users/srinivasang/Desktop/Technical Landscape.jpg",key_name="temp.jpg")
     delete_object(s3_resource,bucket_name,"temp.pdf")
     delete_object(s3_resource,bucket_name,"temp.jpg")
-    delete_bucket(s3_client,bucket_name)
-
+    delete_bucket(s3_client,bucket_name) """
+    
 # this means that if this script is executed, then 
 # main() will be executed
 if __name__ == '__main__':
