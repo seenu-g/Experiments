@@ -31,7 +31,8 @@ aws s3 ls s3://soai
 aws s3api put-bucket-policy --bucket soai --policy file://s3_all_policy.json --profile Administrator
 aws s3api get-bucket-policy --bucket soai --profile Administrator
 aws s3api delete-bucket-policy --bucket soai --profile Administrator
-# generates policy skeleton for customization
+
+#### generates policy skeleton for customization
 aws s3api put-bucket-acl --bucket soai --generate-cli-skeleton
 
 #### control access to S3
