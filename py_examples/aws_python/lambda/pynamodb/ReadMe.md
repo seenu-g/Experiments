@@ -19,4 +19,6 @@ curl -X GET https://bricz2qbj7.execute-api.us-east-1.amazonaws.com/dev/model/1a2
 
 curl -X DELETE https://bricz2qbj7.execute-api.us-east-1.amazonaws.com/dev/model/1a282ab8-ec43-11ea-b16e-a2a5d1a5d2e6
 
+<!-- Warning. Did not remove entry from DynamMoDB and have to remove manually-->
+sls remove --aws-profile serverless-admin     
 
