@@ -1,0 +1,122 @@
+# Welcome to Serverless!
+#
+# This file is the main config file for your service.
+# It's very minimal at this point and uses default values.
+# You can always add more config options for more control.
+# We've included some commented out config examples here.
+# Just uncomment any of them to get that config option.
+#
+# For full config options, check the docs:
+#    docs.serverless.com
+#
+# Happy Coding!
+
+service: pynamodb
+# app and org for use with dashboard.serverless.com
+#app: your-app-name
+#org: your-org-name
+
+# You can pin your service to only deploy with a specific Serverless version
+# Check out our docs for more details
+# frameworkVersion: "=X.X.X"
+plugins:
+  - serverless-python-requirements
+package:
+  exclude:
+    - node_modules/**
+    - .idea/**
+    - .requirements/**
+    - env/**
+    - README.md
+    - package.json
+    - package-lock.json
+    - requirements.txt
+    
+provider:
+  name: aws
+  runtime: python3.7
+  region: us-east-1
+  environment:
+    DYNAMODB_TABLE: ${self:service}-${opt:stage, self:provider.stage}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:DescribeTable
+      Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+
+functions:
+  create:
+    handler: model/create.create
+    events:
+      - http:
+          path: model
+          method: post
+          cors: true
+
+  list:
+    handler: model/list.todo_list
+    events:
+      - http:
+          path: model
+          method: get
+          cors: true
+
+  get:
+    handler: model/get.get
+    events:
+      - http:
+          path: model/{todo_id}
+          method: get
+          cors: true
+          integration: lambda
+          request:
+            paths:
+              todo_id: true
+
+  update:
+    handler: model/update.update
+    events:
+      - http:
+          path: model/{todo_id}
+          method: put
+          cors: true
+          integration: lambda
+          request:
+            paths:
+              todo_id: true
+  delete:
+    handler: model/delete.delete
+    events:
+      - http:
+          path: model/{todo_id}
+          method: delete
+          cors: true
+          integration: lambda
+          request:
+            paths:
+              todo_id: true
+
+resources:
+  Resources:
+    modelDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: todo_id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: todo_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
