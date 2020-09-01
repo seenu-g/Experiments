@@ -1,18 +1,24 @@
 # serverless commands
 
-<!-- install serverless -->
+- install serverless 
 npm i -g serverless
 
-<!-- create python template -->
+- create python template 
 serverless create --template aws-python
 
-<!-- deploy lambda service. The output has URL that can be used to access the function-->
+- deploy lambda service. The output has URL that can be used to access the function
 sls deploy --aws-profile serverless-admin
 
-<!-- invoke function and capture logs -->
+- invoke function and capture logs
 serverless invoke --function hello --log --aws-profile serverless-admin
 
-<!-- remove lambda service-->
+- create package for serverless application
+serverless package --aws-profile serverless-admin
+
+- get info about deployed serverless application
+serverless info --aws-profile serverless-admin
+
+- remove lambda service
 sls remove --aws-profile serverless-admin
 
 <!-- install -->
