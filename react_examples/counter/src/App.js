@@ -35,6 +35,31 @@ function Presentation(props) {
   );
 }
 
+function Employee(props){
+
+  return ( 
+  <div style={{border:"3px solid red"}}>
+    <p>Employee ID : <b>{props.data.Id}</b></p>
+    <p>Employee Name : <b>{props.data.Name}</b></p>
+    <p>Employee Location : <b>{props.data.Location}</b></p>
+    <p>Employee Salary : <b>{props.data.Salary}</b></p>
+  </div>
+  );
+}
+function DislayEmployees(props) {
+  
+  const list = props.employeeList;
+  const listElements = list.map((emp) =><Employee key={emp.Id}  data={emp} ></Employee> );
+  
+  return (listElements);
+  }
+
+const employees = [
+  {Id:101,Name:'Abhinav',Location:'Bangalore',Salary:12345},
+  {Id:102,Name:'Abhishek',Location:'Chennai',Salary:23456},
+  {Id:103,Name:'Ajay',Location:'Bangalore',Salary:34567} 
+  ];
+
 /* To make the counter state accessible to both components, we need to create a parent component. */
 function App() {
 	const [counter1, addCounter] = useState(0);
@@ -50,6 +75,9 @@ function App() {
 
      <Button onClickFunction={decrementCounter}  />
      <Presentation message={counter2}/>
+
+     <DislayEmployees employeeList ={employees} />
+
    </div> 
   );
 }
@@ -60,3 +88,8 @@ ReactDOM.render(
 );
 
 export default App;
+
+
+  
+
+
