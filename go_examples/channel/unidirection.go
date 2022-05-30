@@ -13,11 +13,14 @@ func main() {
 	fmt.Printf("Data type of roc is `%T`\n", roc)
 	fmt.Printf("Data type of soc is `%T\n", soc)
 
-	fmt.Println("main() started")
 	c := make(chan string)
+	fmt.Println("main() started")
 
 	go display(c)
 	c <- "John"
+
+	go display(c)
+	c <- "Srini"
 
 	fmt.Println("main() stopped")
 }
