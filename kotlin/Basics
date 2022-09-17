@@ -1,0 +1,114 @@
+fun main() {
+    var name = "Zara Ali"  // Not allowed, throws an exception
+    var age = 19          // Valid variable name
+ 
+    println("Name = $name")
+    println("Age = $age")
+
+    name = "Nuha Ali"
+    age = 11
+    println("Name = $name")
+    println("Age = $age")
+    
+    // var can be reassigned to a different value after initial assignment
+
+    val location = "Mumbai"
+    try {
+       // location = "Bangalore"  // val cannot be reassigned to different value after initial assignment 
+        println("Location = $location")
+    } catch ( exception: Exception) {
+        println ("Exception " + exception)
+    }
+
+
+    // Mutable variables used to define variables,  will keep charging  values based on different conditions during program execution
+    // Read-only variable used to define different constant values,  retain their value throughout of the program.
+
+    val a: Int = 10000
+    println("Int Value is " + a)
+
+    val f: Float = 100.00f
+    println("Float Value is " + f)
+    
+    val letter: Char    
+    letter = 'A'        // first initialization , not allowed to be reassigned
+    println("$letter")
+    // there can be mpty string having zero characters.
+
+    // Escaped string is declared within double quote (" ") and may contain escape characters like '\n', '\t', '\b' etc.
+    val escapedString : String  = "I live in Bangalore !\n"
+    print(escapedString)
+
+    // Raw string is declared within triple quote (""" """) and may contain multiple lines of text without any escape characters.
+    var rawString :String  = """I live with 
+    my wife
+    and daughters""";
+    println(rawString)
+
+    // Boolean can store 3 values in kotlin
+    var operand: Boolean = true   
+    println ("$operand")
+    operand = false 
+    println ("$operand")
+
+    val boolNull: Boolean? = null  // Boolean can take null too
+    println(boolNull)
+
+    val numbers: IntArray = intArrayOf(1, 2, 3, 4, 5)
+    println("Value at 3rd position : " + numbers[4])
+
+
+    var oper1: Int = 400
+    var oper2: Int = 20
+    println ("oper1 = $oper1, oper2 = $oper2")
+    println("oper1 + oper2 = " +  (oper1 + oper2))
+    println("oper1 - oper2 = " +  (oper1 - oper2))
+    println("oper1 / oper2 = " +  (oper1 / oper2))
+    println("oper1 * oper2 = " +  (oper1 * oper2))
+    println("oper1 % oper2 = " +  (oper1 % oper2))
+
+   println("oper1 > oper2 = " +  (oper1 > oper2))
+   println("oper1 < oper2 = " +  (oper1 < oper2))
+   println("oper1 >= oper2 = " +  (oper1 >= oper2))
+   println("oper1 <= oper2 = " +  (oper1 <= oper2))
+   println("oper1 == oper2 = " +  (oper1 == oper2))
+   println("oper1 != oper2 = " +  (oper1 != oper2))
+
+   println("+oper1 = " +  (+oper1)) // positive integer
+   println("-oper1 = " +  (-oper1)) // negative integer
+   println("++oper1 = " +  (++oper1)) // increments
+   println("--oper1 = " +  (--oper1)) // decrements
+   println("!operand = " +  (!operand))
+
+   // += is addition assignment operator
+   oper1 += 10
+   println(" Result of \"oper1 += 10\" : $oper1")
+   oper2 -= 5
+   println(" Result of \"oper2 -= 5\" : $oper2")
+   oper2 *= 5
+   println(" Result of \"oper2 *= 5\" : $oper2")
+   oper1 /= 41
+   println(" Result of \"oper1 /= 41\" : $oper1")
+
+   var b1: Boolean = true
+   var b2: Boolean = false
+   println ("b1 = $b1 , b2 = $b2")
+   println("b1 && b2 = " +  (b1 && b2))
+   println("b1 || b2 = " +  (b1 || b2))
+   println("!b2 = " +  (!b2))
+   println("b1.toString() = " +  b1.toString())
+
+    // this will not be allowed in kotlin, storing integer in float
+    // var y: Long = a
+    // val z: long = a
+    // println (y, z) // printn cannot take multiple arguments
+
+    val p: Long = a.toLong()
+    var z: Long = a.toLong()
+    println ("$p, $z")
+
+    var s1: String
+    // s1 = b1   // comilation error type mismatch
+    s1 = b1.toString() + " " + b2.toString()
+    println(s1)
+ }
