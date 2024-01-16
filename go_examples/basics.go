@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/cmplx"
+	"strings"
 )
 
 var (
@@ -33,6 +34,21 @@ func main() {
 
 	fmt.Println("hello")
 
+	m1 := 2
+	m2 := 3
+	fmt.Println(m1 + m2)
+
+	var str1, str2 string = "Milli", "Srinivasan"
+	//m1 := "Milli Srinivasan"
+	fmt.Println(str1 + str2)
+	var str3 string = str1 + " " + str2
+	fmt.Println(str3, "Contains", str2, strings.Contains(str3, str1))
+	fmt.Println(str3, "Contains", "Shubha", strings.Contains(str3, "Shubha"))
+	fmt.Println(strings.ReplaceAll(str3, "Milli", "Milani"))
+	fmt.Println(strings.Split(str3, " "))
+
+	//s1 := "my"
+	//s1 := "my name" this is error := is used only for declaration
 }
 
 /*

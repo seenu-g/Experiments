@@ -21,6 +21,13 @@ func main() {
 	var part []int = primeNums[1:4]
 	fmt.Println("Part 1-4 of primes: ", part)
 
+	primeNumbers := []int{2, 3, 5, 7, 11, 13, 17, 19, 23, 29}
+	fmt.Println("Primes numbers: ", primeNumbers)
+
+	array2 := []string{"My", "name", "is"}
+	array2 = append(array2, "Srinivasan", "from", "Bangalore")
+	fmt.Println(array2)
+
 	var b = 5
 	var a = [3][3]int{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}
 	/* output each array element's value */
@@ -58,4 +65,15 @@ func main() {
 	fmt.Println(word[0], word[1])
 	fmt.Println(word)
 
+	var no1, no2 int = 25, 35
+	swap(&no1, &no2)
+	fmt.Println(no1, no2)
+
+}
+
+func swap(m1 *int, m2 *int) {
+	var temp int
+	temp = *m1
+	*m1 = *m2
+	*m2 = temp
 }
