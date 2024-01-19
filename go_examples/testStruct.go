@@ -15,6 +15,16 @@ type employee struct {
 	empId int
 }
 
+type car struct {
+	name  string
+	year  int
+	maker string
+}
+
+func (c car) Print() {
+	fmt.Println(c)
+}
+
 func (p person) person_details() {
 	fmt.Println(p, " "+" I am a person")
 }
@@ -48,5 +58,12 @@ func main() {
 	fmt.Println(m)
 	m["Key2"] = 555
 	fmt.Println(m)
+
+	car1 := car{"Swift", 2019, "Maruti"}
+	car1.Print()
+	car2 := car{"Alto", 2003, "Maruti"}
+	car2.Print()
+	car3 := car{"Civic", 2011, "Honda"}
+	car3.Print()
 
 }
