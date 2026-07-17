@@ -1,0 +1,6 @@
+Company Policy Manual:
+- WFH Policy: All employees are eligible for a hybrid WFH schedule. Employees must be in the office on 
+Tuesdays, Wednesdays, and Thursdays. Mondays and Fridays are optional remote days.
+- PTO Policy: Full-time employees receive 20 days of Paid Time Off (PTO) per year. PTO accrues monthly.
+- Tech Stack: The official backend language is Python, and the official frontend framework is React.
+ For mobile development, we use React Native.

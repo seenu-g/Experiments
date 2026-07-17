@@ -1,0 +1,105 @@
+SRINIVASAN G
+Platform & Engineering Leader | FinTech, Platforms, Marketplaces, AI/ML
+Bangalore, India | gsvasan@yahoo.com | LinkedIn | +91-9945503508
+Executive Summary
+Platform and Engineering Leader with 26+ years of experience building, scaling, and modernizing fintech, enterprise SaaS,
+healthcare, digital marketplace, and EdTech platforms. Led 6+ end-to-end platform and product initiatives from inception,
+including multiple 0→1 launches as a startup founder. Drove enterprise modernization at Clarivate, Vayana, and ACV,
+transforming legacy platforms into cloud-native architectures across regulated and multi-stakeholder environments.
+Combines startup execution with enterprise leadership by building high-performing distributed engineering teams, leading
+technology transformation, and aligning platform strategy with business outcomes. Architected and delivered third-party
+integrations, led platform evolution across multiple initiatives, and applied AI and LLM technologies to risk intelligence,
+engineering productivity, and architecture discovery.
+Selected Impact
+48% YoY growth supported across a dealer lending platform 1,000+ dealers migrated in under 2 months with zero
+serving 2000+ dealers (ACV Capital) disruption to lending operations (ACV Capital).
+$1B+ financing transactions enabled across a multi-bank supply 40K+ end users served through modernization of a healthcare
+chain finance network (Vayana) insights platform across 400+ enterprises (Clarivate)
+50,000+ Assessments and 40,000+ course completions achieved 6 → 130+ contributed to scaling of the Chennai engineering
+through a scaled EdTech platform (ArthaVidhya) center during hyper-growth (ACV)
+Professional Experience
+Senior Engineering Manager, ACV Auctions, Chennai Mar 2024 – Mar 2026
+ACV Capital — FinTech platform powering dealer financing across the ACV Auctions marketplace (24K+ dealers, $760M revenue).
+Contributed to scaling Chennai engineering center from 6 to 130+ employees during hyper-growth phase (ACV).
+• Led engineering for dealer financing platform serving 2,000+ dealers, enabling capabilities that supported 48% YoY growth
+and increased dealer adoption.
+• Built and led an 8+ engineer team across lending, onboarding, audit, and risk capabilities, expanding team capacity and
+partnering with cross-functional stakeholders to deliver strategic business outcomes.
+• Led migration of 1,000+ dealers from a critical third-party audit platform in under 2 months, achieving zero lending
+disruption, eliminating vendor dependency & operational risk. Executed build-vs-buy strategy jointly with the product team.
+• Redesigned dealer onboarding workflows, expanding financing eligibility to 500+ active dealers, increasing loan participation.
+• Built rules-based risk credit-scoring system that reduced manual effort and improved consistency of lending decisions.
+• Integrated Finicity, Experian, Salesforce, and accounting systems into lending workflows, improving data accuracy, reducing
+manual processing, and strengthening lending risk assessment.
+• Resolved long-standing audit-system data integrity issues, reducing operational risk and improving compliance readiness.
+• Defined strategy for explainable credit scoring and AI agent-based risk monitoring. Built an LLM-powered knowledge assistant
+to improve engineering productivity and accelerate architecture discovery.
+Technology: AWS (S3, EC2), Python, Kafka, ReactJS, MySQL, Salesforce, NetSuite, AI/ML, Agile/Scrum
+Platform Development - SVP, Vayana Network, Bangalore Aug 2022 – Sept 2023
+Supply chain finance network connecting 10+ banks, 700+ corporates, 5,000+ SMEs, enabling $1B+ in financing transactions.
+• Led platform engineering for a multi-bank, multi-tenant supply chain finance network, driving the transition from monolithic
+architecture to microservices to enable scalable partner onboarding and improve platform extensibility.
+• Owned end-to-end migration execution across banking partners and enterprises, aligning technical execution with business
+priorities and implementing changes required for compatibility with existing systems, improving migration predictability.
+• Built platform capabilities required to onboard two new banks, expanding network reach and transaction volume.
+• Established security, governance, and compliance controls to support regulated financial transactions.
+Technology: AWS (EC2, S3, SQS, SES, Fargate, DynamoDB), Kotlin, Java, Python, Ktor2, MySQL, ReactJS
+Senior Manager – Technology, Clarivate, Bangalore Feb 2021 – May 2022
+Insights platform integrating content, analytics, and data applications serving 400+ enterprises and 40K+ users.
+• Led a 20+ member cross-functional team, responsible for platform modernization, reliability, and delivery.
+• Increased automated test coverage from 0% → 80% within 3 months, improving release quality and deployment confidence.
+• Modernized healthcare insights platform serving 40K+ users, improving scalability, reliability, and cloud cost efficiency.
+• Built Java-based API architecture supporting data science workflows while leading PHP-to-Java engineering upskilling.
+• Resolved critical publishing and performance bottlenecks, improving user experience and operational efficiency.
+• Delivered enterprise integration APIs that reduced onboarding effort for new enterprise clients.
+• Implemented security and GDPR controls across platform and third-party integrations, reducing compliance risk.
+Technology: AWS (EC2, S3, Lambda), PHP, C#, Python, Java, NodeJS, MySQL, Drupal, Salesforce, Pendo, Docker, Agile/Scrum
+https://github.com/seenu-gSenior Architect – Global Business, ESDS Solutions, Bangalore Aug 2019 to Sept 2020
+Led solution architecture for government and public-sector opportunities valued at ₹5Cr, translating business requirements into
+scalable cloud and platform solutions. Partnered with sales, delivery, and customer stakeholders to improve deal execution.
+Director, Accion Labs, Bangalore Apr 2016 to July 2019
+Built and led a 20+ member engineering team to develop and launch 0→1 lending and marketplace platforms for startups
+• Built and launched a digital lending marketplace (MCAProtect) connecting funders, brokers, and MSME borrowers. Led a 10-
+engineer team responsible for platform architecture and digitization of the end-to-end loan origination lifecycle, integrating
+credit bureaus, bank-statement aggregation, e-signature, and Salesforce to streamline lending workflows.
+• Led a 5-engineer mobile team to develop Android and iOS applications for borrower onboarding and document collection.
+• Built and led a 6-engineer team to develop and launch a retail marketplace platform (mykala), enabling retailer bidding, order
+fulfilment, and integrations for payments, taxes, and shipping.
+• Implemented AI-powered document ingestion and financial data extraction, reducing manual effort and improving efficiency.
+• Developed blockchain proof-of-concept solutions for lending governance and supply-chain asset verification.
+Technology: AWS, EC2, S3, Lambda, RoR, Angular, Java, NodeJS, MySQL, MongoDB, Redis, Solr, iOS, Android, SalesForce
+Development Team Lead, Meridium (GE Digital), Bangalore Apr 2015 to Mar 2016
+Transformed CI/CD and quality practices across a 100-engineer organization, reducing test failures from 1,500 to fewer than 30,
+remediating critical security vulnerabilities, and leading a strategic database upgrade for all enterprise customers.
+Co-Founder and Startup Leadership Experience - Head of Product Development, MobiSir | ArthaVidhya Mar 2011 to Mar 2015
+Co-founded and scaled two EdTech ventures, leading product engineering, product marketing, and go-to-market execution from
+concept to early market adoption (0→1, 1→10).
+• Built and launched a multi-tenant mobile-first learning SaaS platform (mXams) serving 5,000+ students and 10+ educators.
+Established strategic partnerships with BlackBerry, Nokia, and Samsung, expanding distribution channels and market reach.
+• Built and scaled ArthaVidhya experiential learning platform to 50,000+ assessments and 40,000+ course completions, achieving
+adoption through industry and educational partnerships. ArthaVidhya became an NSDC skill partner.
+• Supported product incubation and platform development for emerging startups including AhaGuru and Butterfly Fields.
+Technical Project Manager, Protean Software (Harman), Bangalore | Reported to CEO. Mar 2006 to Jan 2011
+• Built and led engineering teams from scratch to develop enterprise software products for Microsoft and Ipswitch, driving
+predictable execution, high-quality delivery and a strong end-user-centric approach across the product lifecycle.
+• Scaled and led dedicated teams of 20+ engineers for multiple ISV customers, owning end-to-end product execution, agile
+delivery, stakeholder relationships, team development, and successful multi-year product engineering engagements.
+Technical Leader, MTS-2, Hughes Software, Bangalore | Hughes Network Systems, USA Mar 2000 to Mar 2006
+• Developed real-time event-processing systems supporting automation and alarm management for buildings of JCI, USA.
+• Coordinated build and release activities across engineering teams, helping to establish early agile development practices.
+Software Engineer, Tata InfoTech Limited (TCS), Bangalore Jul 1998 to Feb 2000
+Technical Proficiency
+• Technology Leadership: Platform Engineering, Platform Modernization, Distributed Systems, Microservices, API
+Platforms, DevOps, Security, Event-Driven Systems
+• Cloud & Infrastructure: AWS, Azure, GCP, Kubernetes, Salesforce
+• Languages: Python, Java, Kotlin, C#, Go, JavaScript, C/C++, SQL
+• AI & Emerging Tech: LLMs, Claude, Agentic AI, RAG, MCP, Explainable AI, Blockchain
+• Domains: FinTech, Supply Chain Finance, Healthcare, Marketplaces, EdTech, E-Commerce, Control Systems
+Publication
+Sidhayian, D., Bhatia, D., & Srinivasan, G. (2026). GUS: A Graph Utility Score Framework for Method Selection in Fraud Detection.
+Proceedings of the 4th International Conference on Data Science, Agents and Artificial Intelligence (ICDSAAI 2026), IEEE.
+Education
+Master of Science in Mathematics (Theoretical Computer Science), College of Engineering, Guindy 1996 - 1998
+Bachelor of Science in Mathematics, University of Madras and ICWA - Intermediate 1993 - 1996
+Professional Development “Extensive Vision AI – Basics and Applications”. The School of AI 2020
+https://github.com/seenu-g
