@@ -102,6 +102,26 @@ def retrieve_documents(query: str, retriever):
     return retriever.invoke(query)
 
 
+SEARCH_KEYWORDS = [
+    "pdf", "document", "data", "summarize", "information", "find",
+    # sample_company.pdf (Nimbus Robotics fact sheet)
+    "nimbus", "robotics", "nimbuscart", "founder", "funding", "series a", "series b",
+    "customer", "warehouse", "revenue",
+    # srini.pdf (Srinivasan G resume)
+    "srini", "srinivasan", "resume", "cv", "experience", "career", "skills",
+    "education", "work history", "job", "role", "employer", "company he worked",
+    "clarivate", "vayana", "acv",
+]
+
+
+def agent_controller(query: str) -> str:
+    """Decide whether a query needs document retrieval or can be answered directly."""
+    q = query.lower()
+    if any(word in q for word in SEARCH_KEYWORDS):
+        return "search"
+    return "direct"
+
+
 def build_prompt(query: str, context: str) -> str:
     """Assemble the LLM prompt from retrieved context and the user's question."""
     return (
@@ -153,8 +173,14 @@ def main():
             print("Goodbye.")
             break
 
-        results = retrieve_documents(query, retriever)
-        answer = generate_answer(query, results, llm)
+        action = agent_controller(query)
+        if action == "search":
+            print(f"Agent decision: SEARCH (matched a document keyword) -> '{query}'")
+            results = retrieve_documents(query, retriever)
+            answer = generate_answer(query, results, llm)
+        else:
+            print(f"Agent decision: DIRECT (no document keyword matched) -> '{query}'")
+            answer = llm(query)
 
         print("\nAnswer:")
         print(answer)
