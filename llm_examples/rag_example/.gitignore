@@ -2,3 +2,7 @@
 __pycache__/
 chroma_db/
 models/
+
+*.db
+*.def
+*.dll
