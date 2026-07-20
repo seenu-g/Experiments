@@ -11,6 +11,7 @@ quiet partway through.
 import unittest
 
 from sqlite3_agent import (
+    DEFAULT_QUESTION,
     answer_step,
     checker_step,
     draft_query_step,
@@ -20,7 +21,7 @@ from sqlite3_agent import (
     schema_step,
 )
 
-QUESTION = "Which genre on average has the longest tracks?"
+QUESTION = DEFAULT_QUESTION
 
 
 class TestSqlAgentSteps(unittest.TestCase):

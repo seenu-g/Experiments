@@ -12,6 +12,7 @@ from sqlite3_helper import (
 
 CHINOOK_URL = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
 CHINOOK_PATH = Path("Chinook.db")
+DEFAULT_QUESTION = "Which genre on average has the longest tracks?"
 
 
 def ensure_chinook_db(path: Path = CHINOOK_PATH, url: str = CHINOOK_URL) -> Path:
@@ -93,32 +94,37 @@ def run_pipeline(question: str) -> str:
     print(f"Question: {question}\n")
 
     print("Step 1: sql_db_list_tables")
-    tables = list_tables_step()
+    tables = list_tables_step() # tool call
     print(tables, "\n", flush=True)
 
     print("Step 2: pick relevant tables + sql_db_schema")
-    relevant_tables, schema = schema_step(tables, question)
+    relevant_tables, schema = schema_step(tables, question) # LLM call
     print("Relevant tables:", relevant_tables)
     print(schema, "\n", flush=True)
 
-    print("Step 3: draft SQL query")
-    draft_query = draft_query_step(schema, question)
+    print("Step 3: draft SQL query") 
+    draft_query = draft_query_step(schema, question) # LLM call
     print(draft_query, "\n", flush=True)
 
     print("Step 4: sql_db_query_checker")
-    checked_query = checker_step(draft_query)
+    checked_query = checker_step(draft_query) # LLM call
     print(checked_query, "\n", flush=True)
 
     print("Step 5: sql_db_query")
-    result = run_query_step(checked_query)
+    result = run_query_step(checked_query) # LLM call
     print(result, "\n", flush=True)
 
     print("Step 6: final answer")
-    answer = answer_step(question, result)
+    answer = answer_step(question, result) # LLM call
     print(answer, flush=True)
     return answer
 
 
-if __name__ == "__main__":
+def main(question: str = DEFAULT_QUESTION) -> str:
+    """Entry point; `question` can later be sourced from user input instead of the default."""
     ensure_chinook_db()
-    run_pipeline("Which genre on average has the longest tracks?")
+    return run_pipeline(question)
+
+
+if __name__ == "__main__":
+    main()

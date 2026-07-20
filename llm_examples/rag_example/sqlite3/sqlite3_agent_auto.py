@@ -8,7 +8,7 @@ test_sqlite3_agent.py passes and you trust each individual step in isolation.
 """
 from langchain.agents import create_agent
 
-from sqlite3_agent import ensure_chinook_db
+from sqlite3_agent import DEFAULT_QUESTION, ensure_chinook_db
 from sqlite3_helper import model, tools
 from sqlite3_prompt import SQLAgentForLLM_prompt
 
@@ -20,7 +20,7 @@ agent = create_agent(
     system_prompt=SQLAgentForLLM_prompt,
 )
 
-question = "Which genre on average has the longest tracks?"
+question = DEFAULT_QUESTION
 
 final_state = None
 for step in agent.stream(
