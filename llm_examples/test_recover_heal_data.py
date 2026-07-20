@@ -1,11 +1,13 @@
 """
 Unit tests for recover_heal_data.py's modular detect/fix/confirm schema-healing
-pipeline. Run with: python -m unittest test_recover_heal_data -v
+pipeline. Run with: python test_recover_heal_data.py
 
 Each test targets one function in isolation, plus a couple of scale/edge-case
 scenarios (e.g. 100 columns instead of 4) run against the real local LLM
 (phi3 via Ollama) to see actual behavior rather than assuming it.
 """
+import io
+import sys
 import time
 import unittest
 
@@ -117,5 +119,51 @@ class TestScale(unittest.TestCase):
             print(f"\n  [100 semantic columns] {type(e).__name__}: {e} after {elapsed:.1f}s")
 
 
+def run_with_clean_output(*test_case_classes):
+    """Run each test individually, printing '<test_name>: STATUS' on its own
+    line followed by that test's captured print/log output, then a blank
+    line before the next test - instead of unittest's default interleaved
+    dots-and-logs formatting.
+    """
+    total = 0
+    failed = 0
+
+    for test_class in test_case_classes:
+        suite = unittest.TestLoader().loadTestsFromTestCase(test_class)
+        for test in suite:
+            total += 1
+            buf = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buf
+            result = unittest.TestResult()
+            test.run(result)
+            sys.stdout = old_stdout
+
+            if result.wasSuccessful():
+                status = "PASS"
+            elif result.errors:
+                status = "ERROR"
+                failed += 1
+            else:
+                status = "FAIL"
+                failed += 1
+
+            print(f"{test._testMethodName}: {status}")
+            captured = buf.getvalue().strip()
+            if captured:
+                print(captured)
+            for _, trace in result.failures + result.errors:
+                print(trace)
+            print()
+
+    print(f"Ran {total} tests, {total - failed} passed, {failed} failed")
+    return failed == 0
+
+
 if __name__ == "__main__":
-    unittest.main()
+    ok = run_with_clean_output(
+        TestDetectMismatch,
+        TestFixAndConfirmHealing,
+        TestScale,
+    )
+    sys.exit(0 if ok else 1)
