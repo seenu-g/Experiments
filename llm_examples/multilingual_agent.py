@@ -1,3 +1,4 @@
+# By picking the right embedding model, we removed the need for a translation layer.
 from typing import Iterable
 
 from dotenv import load_dotenv
@@ -39,6 +40,7 @@ documents = [
     ),
 ]
 
+# the context might be in a different language than the question, but the answer must always match the user’s language:
 prompt = ChatPromptTemplate.from_template(
     """
 You are a helpful assistant.
@@ -57,6 +59,7 @@ Answer:
 )
 
 # Helper function to combine our retrieved documents into a single string
+# enables our English queries find Spanish and French data
 def format_docs(docs: Iterable[Document]) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
 
@@ -76,6 +79,7 @@ vectorstore = Chroma.from_documents(
 retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 
 # Initialize local LLM
+#  set temperature to 0, to ensure answers are factual and based only on our documents, no creative guessing
 llm = ChatOllama(model="llama3:8b", temperature=0)
 
 # Build the pipeline
