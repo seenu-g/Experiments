@@ -5,7 +5,8 @@ from scipy.io.wavfile import write
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
+# sampling rate of 16,000 Hz to  work well with speech recognition models.
+#  listens for five seconds at a time
 def record_audio(filename=None, duration=5):
     filename = filename or os.path.join(BASE_DIR, "audio.wav")
     sample_rate = 16000

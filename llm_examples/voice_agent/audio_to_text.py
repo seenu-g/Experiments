@@ -7,10 +7,11 @@ import sounddevice as sd
 from faster_whisper import WhisperModel
 from scipy.io.wavfile import read
 
+# Faster Whisper - faster, optimized version of OpenAI’s Whisper model.
 whisper_model = WhisperModel(
     "small",
     device="cpu",
-    compute_type="int8"
+    compute_type="int8" #uses less memory and allows run on CPUs.
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,16 +36,16 @@ def transcribe_audio(filename=None):
 
     return text.strip()
 
-
+# LLM gets the user’s request as text and decides answer directly or needs to use a tool.
 def ask_llm(user_text, tools_description):
     prompt = f"""
-You are a helpful Voice AI Agent.
+        You are a helpful Voice AI Agent.
 
-{tools_description}
+        {tools_description}
 
-User request:
-{user_text}
-"""
+        User request:
+        {user_text}
+        """
 
     response = ollama.chat(
         model="llama3:8b",
@@ -75,7 +76,7 @@ def speak(text):
         stdin=subprocess.PIPE,
         text=True
     )
-
+    #  turns the text into speech and persist to a file
     process.communicate(text)
 
     rate, audio = read(output_path)
