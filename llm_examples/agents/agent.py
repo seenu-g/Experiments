@@ -9,16 +9,21 @@ Requires Ollama running locally with MODEL pulled (tool-calling capable).
 """
 
 import ast
+import json
 import operator
 from datetime import datetime
+from pathlib import Path
 
 import ollama
 
 MODEL = "llama3.1:latest"
+HISTORY_FILE = Path(__file__).parent / "history.json"
 
 SYSTEM_PROMPT = (
-    "You are a helpful assistant. Use tools when they would give a more "
-    "accurate answer than guessing (e.g. current time, arithmetic)."
+    "You are a helpful assistant. Only call a tool when one of the available "
+    "tools directly applies (e.g. current time, arithmetic). For anything "
+    "else, including general knowledge questions, answer directly from what "
+    "you know -- do not invent or hypothesize tools that were not provided."
 )
 
 
@@ -114,14 +119,27 @@ def run_agent(user_input: str, history: list[dict]) -> list[dict]:
             messages.append({"role": "tool", "content": str(result)})
 
 
+def load_history() -> list[dict]:
+    if HISTORY_FILE.exists():
+        return json.loads(HISTORY_FILE.read_text())
+    return [{"role": "system", "content": SYSTEM_PROMPT}]
+
+
+def save_history(history: list[dict]) -> None:
+    # messages from the model are pydantic objects; plain dicts pass through model_dump-less
+    plain = [m.model_dump(exclude_none=True) if hasattr(m, "model_dump") else m for m in history]
+    HISTORY_FILE.write_text(json.dumps(plain, indent=2))
+
+
 def main():
-    history = [{"role": "system", "content": SYSTEM_PROMPT}]
+    history = load_history()
     print(f"Local agent ready (model={MODEL}). Type 'exit' to quit.")
     while True:
         user_input = input("You: ")
         if user_input.strip().lower() in ("exit", "quit"):
             break
         history = run_agent(user_input, history)
+        save_history(history)
 
 
 if __name__ == "__main__":
