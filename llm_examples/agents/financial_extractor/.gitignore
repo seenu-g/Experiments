@@ -1,0 +1,13 @@
+.env
+
+
+*.log
+*.pyc
+*.*output.txt
+*.md
+audit_logs/.json
+
+eval_results
+__pycache__
+report_cache
+audit_logs

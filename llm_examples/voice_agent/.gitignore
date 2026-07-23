@@ -1,0 +1,4 @@
+*.wav
+*.onnx
+*.onnx.json
+__pycache__/
