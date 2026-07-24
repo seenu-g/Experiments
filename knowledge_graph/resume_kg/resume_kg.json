@@ -1,0 +1,351 @@
+{
+  "nodes": [
+    {
+      "id": "Srinivasan G",
+      "type": "Person"
+    },
+    {
+      "id": "Tata InfoTech Limited (TCS)",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Software Engineer @ Tata InfoTech Limited (TCS)",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 1998,
+      "end": 2000
+    },
+    {
+      "id": "Hughes Software",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Technical Leader, MTS-2 @ Hughes Software",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2000,
+      "end": 2006
+    },
+    {
+      "id": "Protean Software (Harman)",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Technical Project Manager @ Protean Software (Harman)",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2006,
+      "end": 2011
+    },
+    {
+      "id": "MobiSir | ArthaVidhya",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Head of Product Development @ MobiSir | ArthaVidhya",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2011,
+      "end": 2015
+    },
+    {
+      "id": "Meridium (GE Digital)",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Development Team Lead @ Meridium (GE Digital)",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2015,
+      "end": 2016
+    },
+    {
+      "id": "Accion Labs",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Director @ Accion Labs",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2016,
+      "end": 2019
+    },
+    {
+      "id": "ESDS Solutions",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Senior Architect \u2013 Global Business @ ESDS Solutions",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2019,
+      "end": 2020
+    },
+    {
+      "id": "Clarivate",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Senior Manager \u2013 Technology @ Clarivate",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2021,
+      "end": 2022
+    },
+    {
+      "id": "Vayana Network",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Platform Development - SVP @ Vayana Network",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2022,
+      "end": 2023
+    },
+    {
+      "id": "ACV Auctions",
+      "type": "Company",
+      "cluster": "experience"
+    },
+    {
+      "id": "Senior Engineering Manager @ ACV Auctions",
+      "type": "Role",
+      "cluster": "experience",
+      "start": 2024,
+      "end": 2026
+    },
+    {
+      "id": "University of Madras",
+      "type": "School",
+      "cluster": "education"
+    },
+    {
+      "id": "Bachelor of Science in Mathematics @ University of Madras",
+      "type": "Degree",
+      "cluster": "education",
+      "start": 1993,
+      "end": 1996
+    },
+    {
+      "id": "College of Engineering, Guindy",
+      "type": "School",
+      "cluster": "education"
+    },
+    {
+      "id": "Master of Science in Mathematics (Theoretical Computer Science) @ College of Engineering, Guindy",
+      "type": "Degree",
+      "cluster": "education",
+      "start": 1996,
+      "end": 1998
+    },
+    {
+      "id": "The School of AI",
+      "type": "School",
+      "cluster": "education"
+    },
+    {
+      "id": "Professional Development: \"Extensive Vision AI\" @ The School of AI",
+      "type": "Degree",
+      "cluster": "education",
+      "start": 2020,
+      "end": 2020
+    }
+  ],
+  "edges": [
+    {
+      "source": "Srinivasan G",
+      "target": "Software Engineer @ Tata InfoTech Limited (TCS)",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Technical Leader, MTS-2 @ Hughes Software",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Technical Project Manager @ Protean Software (Harman)",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Head of Product Development @ MobiSir | ArthaVidhya",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Development Team Lead @ Meridium (GE Digital)",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Director @ Accion Labs",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Senior Architect \u2013 Global Business @ ESDS Solutions",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Senior Manager \u2013 Technology @ Clarivate",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Platform Development - SVP @ Vayana Network",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Senior Engineering Manager @ ACV Auctions",
+      "relation": "held_role"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Bachelor of Science in Mathematics @ University of Madras",
+      "relation": "earned"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Master of Science in Mathematics (Theoretical Computer Science) @ College of Engineering, Guindy",
+      "relation": "earned"
+    },
+    {
+      "source": "Srinivasan G",
+      "target": "Professional Development: \"Extensive Vision AI\" @ The School of AI",
+      "relation": "earned"
+    },
+    {
+      "source": "Software Engineer @ Tata InfoTech Limited (TCS)",
+      "target": "Tata InfoTech Limited (TCS)",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Software Engineer @ Tata InfoTech Limited (TCS)",
+      "target": "Technical Leader, MTS-2 @ Hughes Software",
+      "relation": "next_role"
+    },
+    {
+      "source": "Technical Leader, MTS-2 @ Hughes Software",
+      "target": "Hughes Software",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Technical Leader, MTS-2 @ Hughes Software",
+      "target": "Technical Project Manager @ Protean Software (Harman)",
+      "relation": "next_role"
+    },
+    {
+      "source": "Technical Project Manager @ Protean Software (Harman)",
+      "target": "Protean Software (Harman)",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Technical Project Manager @ Protean Software (Harman)",
+      "target": "Head of Product Development @ MobiSir | ArthaVidhya",
+      "relation": "next_role"
+    },
+    {
+      "source": "Head of Product Development @ MobiSir | ArthaVidhya",
+      "target": "MobiSir | ArthaVidhya",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Head of Product Development @ MobiSir | ArthaVidhya",
+      "target": "Development Team Lead @ Meridium (GE Digital)",
+      "relation": "next_role"
+    },
+    {
+      "source": "Development Team Lead @ Meridium (GE Digital)",
+      "target": "Meridium (GE Digital)",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Development Team Lead @ Meridium (GE Digital)",
+      "target": "Director @ Accion Labs",
+      "relation": "next_role"
+    },
+    {
+      "source": "Director @ Accion Labs",
+      "target": "Accion Labs",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Director @ Accion Labs",
+      "target": "Senior Architect \u2013 Global Business @ ESDS Solutions",
+      "relation": "next_role"
+    },
+    {
+      "source": "Senior Architect \u2013 Global Business @ ESDS Solutions",
+      "target": "ESDS Solutions",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Senior Architect \u2013 Global Business @ ESDS Solutions",
+      "target": "Senior Manager \u2013 Technology @ Clarivate",
+      "relation": "next_role"
+    },
+    {
+      "source": "Senior Manager \u2013 Technology @ Clarivate",
+      "target": "Clarivate",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Senior Manager \u2013 Technology @ Clarivate",
+      "target": "Platform Development - SVP @ Vayana Network",
+      "relation": "next_role"
+    },
+    {
+      "source": "Platform Development - SVP @ Vayana Network",
+      "target": "Vayana Network",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Platform Development - SVP @ Vayana Network",
+      "target": "Senior Engineering Manager @ ACV Auctions",
+      "relation": "next_role"
+    },
+    {
+      "source": "Senior Engineering Manager @ ACV Auctions",
+      "target": "ACV Auctions",
+      "relation": "worked_at"
+    },
+    {
+      "source": "Bachelor of Science in Mathematics @ University of Madras",
+      "target": "University of Madras",
+      "relation": "from"
+    },
+    {
+      "source": "Bachelor of Science in Mathematics @ University of Madras",
+      "target": "Master of Science in Mathematics (Theoretical Computer Science) @ College of Engineering, Guindy",
+      "relation": "next_degree"
+    },
+    {
+      "source": "Master of Science in Mathematics (Theoretical Computer Science) @ College of Engineering, Guindy",
+      "target": "College of Engineering, Guindy",
+      "relation": "from"
+    },
+    {
+      "source": "Master of Science in Mathematics (Theoretical Computer Science) @ College of Engineering, Guindy",
+      "target": "Professional Development: \"Extensive Vision AI\" @ The School of AI",
+      "relation": "next_degree"
+    },
+    {
+      "source": "Professional Development: \"Extensive Vision AI\" @ The School of AI",
+      "target": "The School of AI",
+      "relation": "from"
+    }
+  ]
+}

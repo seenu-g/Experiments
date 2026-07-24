@@ -1,0 +1,9 @@
+.env
+
+
+*.log
+*.pyc
+*.*output.txt
+
+__pycache__
+report_cache

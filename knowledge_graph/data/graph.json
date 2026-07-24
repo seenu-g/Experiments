@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {"id": "co:youtube", "type": "Company", "properties": {"industry": "Video"}},
+    {"id": "co:google", "type": "Company", "properties": {"industry": "Search"}},
+    {"id": "co:alphabet", "type": "Company", "properties": {"industry": "Tech Conglomerate"}},
+    {"id": "geo:mountain_view", "type": "City", "properties": {"population": 82000}},
+    {"id": "geo:usa", "type": "Country", "properties": {"code": "US"}}
+  ],
+  "edges": [
+    {"source": "co:youtube", "relation": "subsidiary_of", "target": "co:google"},
+    {"source": "co:google", "relation": "subsidiary_of", "target": "co:alphabet"},
+    {"source": "co:google", "relation": "headquartered_in", "target": "geo:mountain_view"},
+    {"source": "geo:mountain_view", "relation": "located_in", "target": "geo:usa"}
+  ]
+}

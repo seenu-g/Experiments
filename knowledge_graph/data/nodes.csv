@@ -1,0 +1,6 @@
+id,type,properties
+co:youtube,Company,"{""industry"": ""Video""}"
+co:google,Company,"{""industry"": ""Search""}"
+co:alphabet,Company,"{""industry"": ""Tech Conglomerate""}"
+geo:mountain_view,City,"{""population"": 82000}"
+geo:usa,Country,"{""code"": ""US""}"

@@ -1,0 +1,5 @@
+source,relation,target
+co:youtube,subsidiary_of,co:google
+co:google,subsidiary_of,co:alphabet
+co:google,headquartered_in,geo:mountain_view
+geo:mountain_view,located_in,geo:usa
