@@ -9,19 +9,17 @@ from centrality_analysis import (
     find_shortest_path,
     display_shortest_path,
 )
-# node2vec / gensim are not installed yet (needs a C compiler to build from
-# source on this machine) - uncomment once they're available.
-# from graph_embeddings import (
-#     compute_node_embeddings,
-#     reduce_embeddings_2d,
-#     display_embeddings,
-# )
-# from clustering_analysis import (
-#     calculate_cluster_kmeans,
-#     calculate_cluster_dbscan,
-#     display_graph_cluster,
-#     display_dbscan_cluster,
-# )
+from graph_embeddings import (
+    compute_node_embeddings,
+    reduce_embeddings_2d,
+    display_embeddings,
+)
+from clustering_analysis import (
+    calculate_cluster_kmeans,
+    calculate_cluster_dbscan,
+    display_graph_cluster,
+    display_dbscan_cluster,
+)
 
 df = load_data()
 G = build_graph(df)
@@ -65,21 +63,18 @@ shortest_path = find_shortest_path(G, source_node, target_node)
 display_shortest_path(G, pos, shortest_path)
 print('Shortest Path:', shortest_path)
 
-# --- Everything below needs node2vec / gensim (not installed) ---
-# Uncomment once `pip install node2vec gensim` succeeds.
+# Node embeddings via node2vec + t-SNE
+embeddings = compute_node_embeddings(G)
+embeddings_2d = reduce_embeddings_2d(embeddings)
+display_embeddings(G, embeddings_2d)
 
-# # Node embeddings via node2vec + t-SNE
-# embeddings = compute_node_embeddings(G)
-# embeddings_2d = reduce_embeddings_2d(embeddings)
-# display_embeddings(G, embeddings_2d)
-#
-# # K-Means clustering on the embeddings
-# kmeans_model = calculate_cluster_kmeans(embeddings, num_clusters=3)
-# kmeans_labels = kmeans_model.fit_predict(embeddings)
-# display_embeddings(G, embeddings_2d, cluster_labels=kmeans_labels, title='K-Means Clustering in Embedding Space with Node Labels')
-# display_graph_cluster(G, pos, embeddings, kmeans_model)
-#
-# # DBSCAN clustering on the embeddings
-# dbscan_model = calculate_cluster_dbscan(embeddings, eps=1.0, min_samples=2)
-# dbscan_labels = dbscan_model.fit_predict(embeddings)
-# display_dbscan_cluster(G, pos, embeddings, dbscan_model)
+# K-Means clustering on the embeddings
+kmeans_model = calculate_cluster_kmeans(embeddings, num_clusters=3)
+kmeans_labels = kmeans_model.fit_predict(embeddings)
+display_embeddings(G, embeddings_2d, cluster_labels=kmeans_labels, title='K-Means Clustering in Embedding Space with Node Labels')
+display_graph_cluster(G, pos, embeddings, kmeans_model)
+
+# DBSCAN clustering on the embeddings
+dbscan_model = calculate_cluster_dbscan(embeddings, eps=1.0, min_samples=2)
+dbscan_labels = dbscan_model.fit_predict(embeddings)
+display_dbscan_cluster(G, pos, embeddings, dbscan_model)
