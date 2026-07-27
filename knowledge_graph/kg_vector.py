@@ -22,15 +22,19 @@ Requires: pip install ollama numpy
 
 Run: python kg_vector.py
 """
+import os
+
 import numpy as np
 import ollama
 
 from kg import Edge, KnowledgeGraph, location_inheritance_rule, transitivity_rule
-from load_kg_data import load_from_csv
+from load_kg_data import load_from_csv, load_from_json, save_to_json
 
 EMBEDDING_MODEL = "all-minilm:l6-v2"
 LLM_MODEL = "qwen3.5:latest"
 TOP_K = 5
+GRAPH_CACHE_PATH = "data/graph_cache.json"
+INDEX_CACHE_PATH = "data/embeddings_cache.npz"
 
 
 def embed(text: str) -> np.ndarray:
@@ -39,10 +43,13 @@ def embed(text: str) -> np.ndarray:
     return vec / np.linalg.norm(vec)
 
 
-def build_graph() -> KnowledgeGraph:
+def build_graph(use_cache: bool = True) -> KnowledgeGraph:
     """Same setup as kg.py's __main__, but we also run the reasoner so
     implicit/inferred facts (e.g. transitive subsidiaries) are retrievable
-    too, not just the explicit ones loaded from CSV."""
+    too, not just the explicit ones loaded from CSV.
+
+    If a cached graph (post-reasoner) exists at GRAPH_CACHE_PATH, load that
+    instead of re-reading the CSVs and re-running the reasoner."""
     kg = KnowledgeGraph()
     kg.add_ontology_rule("headquartered_in", "Company", "City")
     kg.add_ontology_rule("located_in",       "City",    "Country")
@@ -51,8 +58,14 @@ def build_graph() -> KnowledgeGraph:
     kg.add_inference_rule(transitivity_rule)
     kg.add_inference_rule(location_inheritance_rule)
 
-    load_from_csv(kg)
-    kg.run_reasoner()
+    if use_cache and os.path.exists(GRAPH_CACHE_PATH):
+        print(f"   Loading cached graph from {GRAPH_CACHE_PATH}")
+        load_from_json(kg, GRAPH_CACHE_PATH)
+    else:
+        load_from_csv(kg)
+        kg.run_reasoner()
+        save_to_json(kg, GRAPH_CACHE_PATH)
+        print(f"   Saved graph (with inferred facts) to {GRAPH_CACHE_PATH}")
     return kg
 
 
@@ -66,11 +79,24 @@ def verbalize(edge: Edge) -> str:
     return f"{label(edge.source)} {relation_phrase} {label(edge.target)}."
 
 
-def build_index(kg: KnowledgeGraph):
+def build_index(kg: KnowledgeGraph, use_cache: bool = True):
     """Embed every fact in the graph once. Returns the sentences and their
-    embedding matrix (normalized, so similarity is just a dot product)."""
+    embedding matrix (normalized, so similarity is just a dot product).
+
+    Embeddings are cached to INDEX_CACHE_PATH since each one is an Ollama
+    call; the cache is reused only if its sentences still match the graph's
+    (a changed graph makes a stale cache miss and rebuilds automatically)."""
     sentences = [verbalize(e) for e in kg.edges]
+
+    if use_cache and os.path.exists(INDEX_CACHE_PATH):
+        cached = np.load(INDEX_CACHE_PATH, allow_pickle=True)
+        if list(cached["sentences"]) == sentences:
+            print(f"   Loading cached embeddings from {INDEX_CACHE_PATH}")
+            return sentences, cached["embeddings"]
+
     embeddings = np.array([embed(s) for s in sentences])
+    np.savez(INDEX_CACHE_PATH, sentences=np.array(sentences, dtype=object), embeddings=embeddings)
+    print(f"   Saved embeddings to {INDEX_CACHE_PATH}")
     return sentences, embeddings
 
 

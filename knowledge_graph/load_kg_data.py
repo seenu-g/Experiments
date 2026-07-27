@@ -37,3 +37,14 @@ def load_from_json(kg: KnowledgeGraph, path="data/graph.json"):
         kg.add_node(Node(n["id"], n["type"], n.get("properties", {})))
     for e in data["edges"]:
         kg.add_edge(Edge(e["source"], e["relation"], e["target"]))
+
+
+def save_to_json(kg: KnowledgeGraph, path="data/graph.json"):
+    """Writes nodes and edges to a single JSON file — the counterpart to load_from_json,
+    so a graph (including reasoner-inferred edges) can be persisted and reloaded as-is."""
+    data = {
+        "nodes": [{"id": n.id, "type": n.type, "properties": n.properties} for n in kg.nodes.values()],
+        "edges": [{"source": e.source, "relation": e.relation, "target": e.target} for e in kg.edges],
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
