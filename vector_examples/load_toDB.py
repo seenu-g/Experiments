@@ -11,7 +11,10 @@ chromadb_client = chromadb.PersistentClient(path=CHROMA_PATH)
 # Create (or reuse) the collection
 collection = chromadb_client.get_or_create_collection(
     name=COLLECTION_NAME,
-    metadata={"description": "5000 arXiv papers from computer science"}
+    metadata={
+        "description": "5000 arXiv papers from computer science",
+        "hnsw:space": "cosine"
+    }
 )
 
 print(f"Using collection: {collection.name}")

@@ -39,6 +39,18 @@ def query_papers(query_text, n_results=5):
     return papers
 
 
+def search_papers(query_text, n_results=5):
+    papers = query_papers(query_text, n_results=n_results)
+
+    print(f"Query: \"{query_text}\"\n")
+    for paper in papers:
+        print(f"Title: {paper['title']} ({paper['year']})")
+        print(f"Category: {paper['category']} | Distance: {paper['distance']:.4f}")
+        print(f"Abstract: {paper['abstract'][:200]}...\n")
+
+    return papers
+
+
 if __name__ == "__main__":
     query = "neural network training"
     papers = query_papers(query, n_results=5)
@@ -48,3 +60,7 @@ if __name__ == "__main__":
         print(f"Title: {paper['title']} ({paper['year']})")
         print(f"Category: {paper['category']} | Distance: {paper['distance']:.4f}")
         print(f"Abstract: {paper['abstract'][:200]}...\n")
+
+    results = search_papers("reinforcement learning and robotics")
+    results_cv = search_papers("image segmentation techniques")
+    results_broad = search_papers("deep learning applications")
