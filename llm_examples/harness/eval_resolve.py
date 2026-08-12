@@ -44,6 +44,8 @@ import sys
 import tempfile
 
 from resolve import (
+    autofix_stdlib_module_imports,
+    check_missing_config_file_references,
     check_resolve_issues,
     check_undefined_function_calls,
     check_undefined_module_references,
@@ -310,6 +312,137 @@ def eval_multiple_simultaneous_issues_all_reported():
         return ok
 
 
+def eval_autofix_adds_missing_stdlib_import():
+    """Regression check for the 2026-08-13 20260813_013836 run: test_ec2_manager.py
+    and test_s3_manager.py both used f'...{int(time.time())}' without 'import time',
+    which used to fail RESOLVE and burn a whole regenerate-and-retry attempt on a
+    fix that's completely unambiguous -- 'import time' is the only possible correct
+    fix for a bare stdlib name. autofix_stdlib_module_imports() now patches this in
+    place before RESOLVE even runs, so it never becomes a failure at all."""
+    files = [
+        ("s3_manager.py", "def create_bucket(name):\n    pass\n"),
+        (
+            "test_s3_manager.py",
+            "from s3_manager import create_bucket\n\n"
+            "def test_create():\n"
+            "    name = f'bucket-{int(time.time())}'\n"
+            "    create_bucket(name)\n",
+        ),
+    ]
+    fixed_files, fixes = autofix_stdlib_module_imports(files)
+    fixed = dict(fixed_files)
+    ok = True
+    ok &= check(
+        "'import time' is prepended to the file that used it unqualified",
+        fixed["test_s3_manager.py"].startswith("import time\n"),
+        fixed["test_s3_manager.py"],
+    )
+    ok &= check(
+        "the file that never used 'time' is untouched",
+        fixed["s3_manager.py"] == files[0][1],
+        fixed["s3_manager.py"],
+    )
+    ok &= check(
+        "a human-readable fix description is returned",
+        any("test_s3_manager.py" in f and "import time" in f for f in fixes),
+        fixes,
+    )
+
+    passed, detail = check_resolve_issues(
+        [_write_tmp("s3_manager.py", fixed["s3_manager.py"]), _write_tmp("test_s3_manager.py", fixed["test_s3_manager.py"])]
+    )
+    ok &= check("RESOLVE passes on the patched files", passed, detail)
+    return ok
+
+
+def eval_autofix_never_touches_non_stdlib_names():
+    """A missing import of a name that ISN'T a real stdlib module (e.g. a typo'd
+    or hallucinated cross-file function) must be left alone -- autofix only
+    handles the unambiguous stdlib-module case; everything else still needs to
+    go through the normal fail-and-retry RESOLVE path."""
+    files = [("main.py", "def run():\n    return unknown_module.do_thing()\n")]
+    fixed_files, fixes = autofix_stdlib_module_imports(files)
+    ok = True
+    ok &= check("non-stdlib undefined name is not auto-imported", fixed_files == files, fixed_files)
+    ok &= check("no fix is reported for it", fixes == [], fixes)
+    return ok
+
+
+def eval_autofix_skips_non_python_and_unparseable_files():
+    """A non-.py file (e.g. a config .ini) must pass through untouched, and a
+    .py file with a syntax error must be left for LINT to report as-is rather
+    than autofix silently swallowing it."""
+    files = [
+        ("config.ini", "[DEFAULT]\nregion = us-east-1\n"),
+        ("broken.py", "def f(:\n    pass\n"),
+    ]
+    fixed_files, fixes = autofix_stdlib_module_imports(files)
+    ok = True
+    ok &= check("non-.py file passes through unchanged", fixed_files == files, fixed_files)
+    ok &= check("no fixes reported for either file", fixes == [], fixes)
+    return ok
+
+
+def eval_missing_config_file_reference_is_caught():
+    """Regression check for the 2026-08-13 20260813_013836 run (v3): ec2_manager.py
+    and s3_manager.py both called config.read('db_config.ini') and then indexed
+    config['DEFAULT']['region'], but the model never once generated db_config.ini
+    across all 3 attempts. configparser.read() doesn't raise for a missing file,
+    so LINT/RESOLVE's other checks/COMPILE/VALIDATE all passed, and it only
+    surfaced as 'KeyError: region' deep in EXECUTE -- burning the run's entire
+    attempt budget without the model ever being told the real problem."""
+    with tempfile.TemporaryDirectory() as tmp:
+        manager_path = os.path.join(tmp, "ec2_manager.py")
+        with open(manager_path, "w") as f:
+            f.write(
+                "import configparser\n\n"
+                "config = configparser.ConfigParser()\n"
+                "config.read('db_config.ini')\n\n"
+                "def get_region():\n"
+                "    return config['DEFAULT']['region']\n"
+            )
+
+        ok = True
+        issues = check_missing_config_file_references([manager_path], generated_non_py_filenames=set())
+        ok &= check(
+            "missing db_config.ini reference is caught when it was never generated",
+            len(issues) == 1 and "db_config.ini" in issues[0],
+            issues,
+        )
+
+        no_issues = check_missing_config_file_references(
+            [manager_path], generated_non_py_filenames={"db_config.ini"}
+        )
+        ok &= check(
+            "same reference passes when db_config.ini WAS generated this attempt",
+            no_issues == [],
+            no_issues,
+        )
+
+        passed, detail = check_resolve_issues([manager_path], generated_non_py_filenames=set())
+        ok &= check("check_resolve_issues surfaces this failure too", passed is False, detail)
+
+        passed_with_ini, _ = check_resolve_issues(
+            [manager_path], generated_non_py_filenames={"db_config.ini"}
+        )
+        ok &= check("check_resolve_issues passes once the .ini is accounted for", passed_with_ini is True)
+
+        passed_default, _ = check_resolve_issues([manager_path])
+        ok &= check(
+            "the config-file check is opt-in -- omitting generated_non_py_filenames skips it",
+            passed_default is True,
+        )
+
+        return ok
+
+
+def _write_tmp(filename, code):
+    path = os.path.join(tempfile.mkdtemp(), filename)
+    with open(path, "w") as f:
+        f.write(code)
+    return path
+
+
 if __name__ == "__main__":
     results = [
         eval_self_import_undefined_class(),
@@ -324,5 +457,9 @@ if __name__ == "__main__":
         eval_locally_defined_and_builtin_calls_not_falsely_flagged(),
         eval_check_resolve_issues_combines_both(),
         eval_multiple_simultaneous_issues_all_reported(),
+        eval_autofix_adds_missing_stdlib_import(),
+        eval_autofix_never_touches_non_stdlib_names(),
+        eval_autofix_skips_non_python_and_unparseable_files(),
+        eval_missing_config_file_reference_is_caught(),
     ]
     sys.exit(0 if all(results) else 1)

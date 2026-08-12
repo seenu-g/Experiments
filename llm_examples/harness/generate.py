@@ -40,12 +40,23 @@ def _strip_fence(block: str) -> str:
 CONFIG_FORMAT_INSTRUCTION = (
     "Any config values (credentials, connection settings, etc.) must be stored in an INI file "
     "(e.g. db_config.ini), parsed via configparser -- never a Python dict, .env, or .json file. "
-    "This keeps config storage consistent and in one predictable format across tasks."
+    "This keeps config storage consistent and in one predictable format across tasks. If any file "
+    "calls configparser's .read('db_config.ini') (or whatever you name it), that exact .ini file "
+    "MUST itself be one of the files you output, with its own '# === FILE: db_config.ini ===' "
+    "header and fenced block -- referencing a config file without actually outputting it is a "
+    "bug: configparser.read() does not raise an error for a missing file, it silently does "
+    "nothing, so the code only fails later with a confusing KeyError when a key is looked up."
 )
 
 AWS_INSTRUCTION = (
     "If the task involves AWS services via boto3, write production code with plain boto3 clients "
-    "(no hardcoded endpoint_url). " + CONFIG_FORMAT_INSTRUCTION
+    "(no hardcoded endpoint_url). Store the AWS region in the same config INI file as the "
+    "credentials (e.g. 'region = us-east-1' in the same section), and every "
+    "boto3.client(...)/boto3.resource(...) call must pass region_name=<that config value>, read from "
+    "the config -- never a region hardcoded directly in the boto3 call itself. Do not rely on a "
+    "default region being configured in the environment: there is no ~/.aws/config or "
+    "AWS_DEFAULT_REGION set here, so boto3 raises NoRegionError before a call even reaches AWS (or "
+    "moto, under test) if the region is omitted. " + CONFIG_FORMAT_INSTRUCTION
 )
 
 AWS_TEST_INSTRUCTION = (
@@ -57,7 +68,16 @@ AWS_TEST_INSTRUCTION = (
     "the old, removed per-service API (mock_s3, mock_ec2, etc., which no longer exist in moto and "
     "will raise ImportError). The single, current @mock_aws decorator mocks every AWS service "
     "generically and takes no arguments at all. If the task's entrypoint is the test file, running "
-    "it under moto must fully succeed without touching real AWS."
+    "it under moto must fully succeed without touching real AWS. Each test must be self-contained: "
+    "create every resource that test needs within that same test (never assume a resource created "
+    "by a different test still exists -- test order is not guaranteed and each test may run against "
+    "a fresh mock), and only ever delete/terminate a resource that this same test created -- never "
+    "delete or terminate a resource you did not create yourself, even inside the mock. Every "
+    "resource name/ID a test creates (bucket name, instance name, etc.) must be unique to that "
+    "test -- pass it in as a variable built from a timestamp (e.g. f'test-bucket-{int(time.time())}'), "
+    "never a fixed literal like 'test-bucket' reused across multiple test methods, so tests can "
+    "never collide on the same resource name. If you use time.time() for this, the test file must "
+    "'import time' at the top -- it is not implicitly available just because it's used elsewhere."
 )
 
 
@@ -100,8 +120,20 @@ def build_system_instruction(
         "after its FILE header with:\n"
         "# === ENTRYPOINT ===\n"
         "Do not use this multi-file format unless the task genuinely requires more than one file.\n\n"
+        "Expose one function per distinct operation the task describes (e.g. create_x(...), "
+        "delete_x(...), get_x(...)), and call those functions directly from tests and from the "
+        "__main__ example. Do not invent a single dispatcher function that parses a command string "
+        "(e.g. handle_command('ec2 my-instance create')) to route between operations unless the "
+        "task explicitly asks for a CLI or command-line interface -- an unrequested parsing layer "
+        "is code the tests then also have to exercise indirectly, for no benefit.\n\n"
         + (
-            "Include a test file that exercises the code."
+            "Include a test file that exercises the code. The test file must actually RUN its own "
+            "tests when executed directly and exit with a non-zero code if any test fails -- a test "
+            "file that only defines test functions/classes but never invokes them will exit 0 having "
+            "tested nothing, which is worse than no test file at all. If it uses unittest.TestCase, "
+            "put 'unittest.main()' under 'if __name__ == \"__main__\":'. If it uses bare test_*() "
+            "functions instead (no unittest), call every one of them under 'if __name__ == "
+            '"__main__":\' so a failing assertion raises and the process exits non-zero.'
             if needs_tests
             else "Do not write a test file -- only the production code the user asked for."
         )

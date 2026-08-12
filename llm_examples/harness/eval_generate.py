@@ -16,7 +16,12 @@ Run: python eval_generate.py
 import logging
 import sys
 
-from define import _apply_external_system_override, extract_external_system, extract_needs_tests
+from define import (
+    _apply_external_system_override,
+    _apply_needs_tests_override,
+    extract_external_system,
+    extract_needs_tests,
+)
 from generate import (
     AWS_INSTRUCTION,
     AWS_TEST_INSTRUCTION,
@@ -220,6 +225,63 @@ if __name__ == "__main__":
     return ok
 
 
+def eval_base_instruction_forbids_unrequested_command_dispatcher():
+    """Regression check for the 2026-08-13 20260813_012157 run: the spec's Input
+    line said 'User commands specifying the action...' (DEFINE's own paraphrase --
+    the user never asked for a CLI), and GENERATE ran with it, inventing a
+    parse_command/handle_command('ec2 my-instance create') dispatcher instead of
+    plain create_ec2_instance(name)-style functions. The test file then called
+    handle_command(...) without importing it, which RESOLVE correctly caught, but
+    the real waste was GENERATE inventing an unrequested interface layer at all."""
+    ok = True
+    base = build_system_instruction()
+    ok &= check(
+        "base instruction requires one function per operation",
+        "one function per" in base.lower(),
+        base,
+    )
+    ok &= check(
+        "base instruction forbids an unrequested command-string dispatcher",
+        "handle_command" in base and "cli" in base.lower(),
+        base,
+    )
+    return ok
+
+
+def eval_base_instruction_requires_test_file_to_run_its_tests():
+    """Regression check for the 2026-08-13 20260813_012157 run: ec2_manager_test_v2.py
+    defined 6 @mock_aws test_*() functions but never called any of them -- no
+    unittest.main(), no 'if __name__' block invoking them at all. EXECUTE ran it as
+    a plain script, which just defines the functions and exits 0 having tested
+    nothing, and the harness logged 'SUCCESS on v2' for code that was never
+    actually exercised. The old instruction only said to 'include a test file',
+    never that it must actually run its tests and fail non-zero on a failure."""
+    ok = True
+    with_tests = build_system_instruction(needs_tests=True)
+    ok &= check(
+        "instruction requires the test file to actually run its tests",
+        "tested nothing" in with_tests.lower(),
+        with_tests,
+    )
+    ok &= check(
+        "instruction covers the unittest.TestCase case (unittest.main())",
+        "unittest.main()" in with_tests,
+        with_tests,
+    )
+    ok &= check(
+        "instruction covers the bare test_*() function case too",
+        "test_*()" in with_tests,
+        with_tests,
+    )
+    without_tests = build_system_instruction(needs_tests=False)
+    ok &= check(
+        "instruction not present when needs_tests=False",
+        "tested nothing" not in without_tests.lower(),
+        without_tests,
+    )
+    return ok
+
+
 def eval_external_system_gates_aws_instruction():
     ok = True
     ok &= check(
@@ -253,6 +315,59 @@ def eval_external_system_gates_aws_instruction():
     return ok
 
 
+def eval_config_format_instruction_requires_ini_file_to_be_output():
+    """Regression check for the 2026-08-13 20260813_013836 run (v3): ec2_manager.py
+    and s3_manager.py both called config.read('db_config.ini'), but the model never
+    once included a FILE block for db_config.ini itself across all 3 attempts.
+    configparser.read() silently no-ops on a missing file, so this only surfaced as
+    'KeyError: region' deep in EXECUTE. CONFIG_FORMAT_INSTRUCTION said to use an INI
+    file but never said the model must actually output it as one of its files --
+    this applies to both AWS and MySQL since both compose CONFIG_FORMAT_INSTRUCTION."""
+    ok = True
+    aws = build_system_instruction(external_system="AWS")
+    ok &= check(
+        "AWS prompt requires the .ini file to be one of the output FILE blocks",
+        "FILE: db_config.ini" in aws and "MUST itself be one of the files you output" in aws,
+        aws,
+    )
+    mysql = build_system_instruction(external_system="MySQL Database")
+    ok &= check(
+        "MySQL prompt requires the .ini file to be one of the output FILE blocks too",
+        "MUST itself be one of the files you output" in mysql,
+        mysql,
+    )
+    return ok
+
+
+def eval_aws_instruction_requires_region_name():
+    """Regression check for the 2026-08-13 20260813_003655 run: ec2_manager.py's
+    boto3.client('ec2') calls never passed region_name, and this machine has no
+    ~/.aws/config or AWS_DEFAULT_REGION set -- botocore.exceptions.NoRegionError
+    fired before the call even reached moto's mocking. AWS_TEST_INSTRUCTION already
+    told the model to use region_name in the TEST file's own client creation, but
+    AWS_INSTRUCTION (production code) said nothing about region at all, even
+    though production code needing tests=False still creates its own clients."""
+    ok = True
+    prod_only = build_system_instruction(external_system="AWS", needs_tests=False)
+    ok &= check(
+        "production-only AWS prompt requires region_name on every client",
+        "region_name" in prod_only and "NoRegionError" in prod_only,
+        prod_only,
+    )
+    ok &= check(
+        "region must be read from the config file, not hardcoded in the boto3 call",
+        "region = us-east-1" in prod_only and "config" in prod_only.lower(),
+        prod_only,
+    )
+    with_tests = build_system_instruction(external_system="AWS", needs_tests=True)
+    ok &= check(
+        "AWS+tests prompt still requires region_name in production code too",
+        "region_name" in with_tests,
+        with_tests,
+    )
+    return ok
+
+
 def eval_aws_test_instruction_forbids_deprecated_moto_api():
     """Regression check for the 2026-08-12 20260812_235607 run: the model wrote
     @mock_aws('s3') and @mock_aws('ec2') across all 3 attempts -- neither the old,
@@ -270,6 +385,44 @@ def eval_aws_test_instruction_forbids_deprecated_moto_api():
     ok &= check(
         "instruction explicitly names the removed per-service decorators",
         "mock_s3" in aws_with_tests and "mock_ec2" in aws_with_tests,
+        aws_with_tests,
+    )
+    return ok
+
+
+def eval_aws_test_instruction_requires_self_contained_tests():
+    """Regression check for the 2026-08-13 20260813_003655 run: test_get_all_s3
+    failed with 'False is not true' because test_create_delete_s3 created then
+    deleted 'test-bucket' before test_get_all_s3 ran (alphabetical unittest
+    order), so the bucket test_get_all_s3 expected to find was already gone --
+    it assumed state left behind by a different test instead of creating its
+    own. AWS_TEST_INSTRUCTION said how to mock AWS but never said tests must be
+    self-contained or that a test may only delete what it itself created."""
+    ok = True
+    aws_with_tests = build_system_instruction(external_system="AWS", needs_tests=True)
+    ok &= check(
+        "instruction requires each test to create its own resources",
+        "self-contained" in aws_with_tests.lower(),
+        aws_with_tests,
+    )
+    ok &= check(
+        "instruction forbids deleting/terminating resources a test didn't create",
+        "did not create" in aws_with_tests.lower() or "didn't create" in aws_with_tests.lower(),
+        aws_with_tests,
+    )
+    ok &= check(
+        "instruction requires a time-based unique resource name per test",
+        "int(time.time())" in aws_with_tests,
+        aws_with_tests,
+    )
+    ok &= check(
+        "instruction forbids a fixed literal resource name reused across tests",
+        "reused across multiple test methods" in aws_with_tests,
+        aws_with_tests,
+    )
+    ok &= check(
+        "instruction explicitly requires 'import time' when using time.time() for the name",
+        "'import time'" in aws_with_tests,
         aws_with_tests,
     )
     return ok
@@ -309,6 +462,60 @@ def eval_needs_tests_gates_test_instructions():
         "explicit 'include a test file' instruction present when needs_tests=True",
         "Include a test file" in build_system_instruction(needs_tests=True),
     )
+    return ok
+
+
+def eval_apply_needs_tests_override():
+    """Regression check for the 2026-08-13 20260813_013836 run: the raw prompt
+    ('Write program that helps to manage EC2 instances... All actions done needs
+    to be saved in log file...') never mentions tests anywhere, yet DEFINE's spec
+    came back with 'Tests needed: Yes' -- GENERATE then spent ~10 minutes writing
+    two unrequested test files nobody asked for. The same 20260813_012157 run had
+    the identical problem."""
+    logger = logging.getLogger("eval_generate_null")
+    logger.addHandler(logging.NullHandler())
+
+    raw_no_tests = (
+        "Write program that helps to manage EC2 instances(create, delete, get all, get). "
+        "S3 instances(create, delete, get all, get). All actions done needs to be saved "
+        "in log file(Resource, Name of instance, Operation performed, Date and time)."
+    )
+    spec_saying_yes = (
+        "Input: User commands specifying the action.\n\nOutput: Confirmation message.\n\n"
+        "Steps:\n1. Perform the action.\n\n"
+        "External System called: AWS\n\nTests needed: Yes"
+    )
+
+    ok = True
+
+    corrected = _apply_needs_tests_override(spec_saying_yes, raw_no_tests, logger)
+    ok &= check(
+        "override corrects 'Yes' to 'No' when the description never mentions testing",
+        extract_needs_tests(corrected) is False,
+        corrected,
+    )
+    ok &= check(
+        "override doesn't touch the rest of the spec",
+        "Confirmation message" in corrected and "External System called: AWS" in corrected,
+        corrected,
+    )
+
+    raw_with_tests = raw_no_tests + " Please write unit tests for each function."
+    unchanged = _apply_needs_tests_override(spec_saying_yes, raw_with_tests, logger)
+    ok &= check(
+        "override is a no-op when the description does mention tests and spec already says Yes",
+        unchanged == spec_saying_yes,
+        unchanged,
+    )
+
+    spec_saying_no = spec_saying_yes.replace("Tests needed: Yes", "Tests needed: No")
+    under_corrected = _apply_needs_tests_override(spec_saying_no, raw_with_tests, logger)
+    ok &= check(
+        "override also corrects 'No' to 'Yes' when the description does ask for tests",
+        extract_needs_tests(under_corrected) is True,
+        under_corrected,
+    )
+
     return ok
 
 
@@ -435,10 +642,16 @@ if __name__ == "__main__":
         eval_single_file_fallback(),
         eval_stray_closing_fence_stripped(),
         eval_duplicate_file_block_deduped(),
+        eval_base_instruction_forbids_unrequested_command_dispatcher(),
+        eval_base_instruction_requires_test_file_to_run_its_tests(),
+        eval_config_format_instruction_requires_ini_file_to_be_output(),
         eval_external_system_gates_aws_instruction(),
+        eval_aws_instruction_requires_region_name(),
         eval_aws_test_instruction_forbids_deprecated_moto_api(),
+        eval_aws_test_instruction_requires_self_contained_tests(),
         eval_needs_tests_gates_test_instructions(),
         eval_apply_external_system_override(),
+        eval_apply_needs_tests_override(),
         eval_extract_external_system(),
         eval_extract_needs_tests(),
     ]

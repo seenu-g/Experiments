@@ -106,6 +106,36 @@ def extract_needs_tests(spec: str) -> bool:
     return match.group(1).strip().lower().startswith("yes") if match else True
 
 
+# Same rationale as _KNOWN_SYSTEM_KEYWORDS/_apply_external_system_override above: this
+# model's own 'Tests needed' classification is unreliable -- observed writing 'Tests
+# needed: Yes' for prompts (e.g. 20260813_013836, 20260813_012157) that never say the
+# word "test" anywhere, doubling generation time and scope for tests nobody asked for.
+_TESTS_KEYWORD_RE = re.compile(r"\btest(s|ing)?\b|\bpytest\b|\bunittest\b", re.IGNORECASE)
+
+
+def _apply_needs_tests_override(spec: str, raw_description: str, logger) -> str:
+    """If the raw description's own mention (or lack) of testing disagrees with the
+    spec's 'Tests needed' line, rewrite the line to match -- this is what actually
+    gates whether GENERATE writes a test file at all, so trusting the model's
+    unreliable restatement over the user's own words silently doubles unrequested
+    work (or, in the other direction, silently drops tests the user did ask for)."""
+    mentions_tests = bool(_TESTS_KEYWORD_RE.search(raw_description))
+    spec_says_yes = extract_needs_tests(spec)
+    if mentions_tests == spec_says_yes:
+        return spec
+
+    correct_value = "Yes" if mentions_tests else "No"
+    logger.info(
+        f"Tests-needed override: spec said '{'Yes' if spec_says_yes else 'No'}', but the "
+        f"description {'mentions' if mentions_tests else 'never mentions'} testing -- "
+        f"using '{correct_value}'."
+    )
+    new_line = f"Tests needed: {correct_value}"
+    if re.search(r"Tests needed:.*", spec):
+        return re.sub(r"Tests needed:.*", new_line, spec, count=1)
+    return spec.rstrip() + f"\n{new_line}"
+
+
 def define_task(confirm, logger, is_test: bool = False) -> str:
     """Loop: describe -> restate -> confirm, until the user accepts the spec.
 
@@ -116,6 +146,7 @@ def define_task(confirm, logger, is_test: bool = False) -> str:
         logger.info(f"User prompt:\n{description}")
         spec = restate_task(description)
         spec = _apply_external_system_override(spec, description, logger)
+        spec = _apply_needs_tests_override(spec, description, logger)
         logger.info(f"Proposed spec:\n{spec}")
         if confirm("Is this correct?"):
             logger.info("Spec confirmed by user.")

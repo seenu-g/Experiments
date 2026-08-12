@@ -29,9 +29,13 @@ single retry can address all of them at once.
 
 import ast
 import builtins
+import importlib.util
 import os
+import re
+import sys
 
 _BUILTIN_NAMES = set(dir(builtins)) | {"__name__", "__file__", "__doc__"}
+_STDLIB_DIR = os.path.dirname(os.__file__)
 
 
 def _module_stem(path: str) -> str:
@@ -158,6 +162,72 @@ def check_undefined_module_usage(py_paths: list) -> list:
     return issues
 
 
+def _is_stdlib_module(name: str) -> bool:
+    """True only for a genuine, importable Python stdlib module -- never a
+    third-party package. sys.stdlib_module_names (3.10+) is the fast, exact
+    path; find_spec's origin is the fallback/cross-check, restricted to files
+    that live under the interpreter's own stdlib directory (so a same-named
+    site-packages module never gets misclassified as stdlib)."""
+    if name in getattr(sys, "stdlib_module_names", ()):
+        return True
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError, ModuleNotFoundError):
+        return False
+    if spec is None or not spec.origin:
+        return False
+    return spec.origin.startswith(_STDLIB_DIR) and "site-packages" not in spec.origin
+
+
+def autofix_stdlib_module_imports(files: list) -> tuple[list, list[str]]:
+    """Deterministically fix ONE narrow, unambiguous class of check_undefined_module_usage
+    finding: a bare `X.attr` usage (e.g. time.time()) where X is missing from the file but
+    IS a genuine Python stdlib module. 'import X' is the only possible correct fix in that
+    case -- unlike an ambiguous cross-file reference (check_undefined_function_calls, where
+    RESOLVE can't know which sibling file to import from), there's nothing for a regenerate
+    -and-retry attempt to usefully decide here, so this patches the file in place instead of
+    spending one of the run's limited attempts on it.
+
+    Runs on the in-memory (filename, code) pairs BEFORE save/stage, so the fix is reflected
+    consistently in both the versioned save and the staged copy everything downstream uses.
+    A file with a syntax error is left untouched -- LINT will catch and report that as usual.
+
+    Returns (fixed_files, fix_descriptions) -- fixed_files is the same shape as the input,
+    fix_descriptions is a human-readable line per import added (possibly empty)."""
+    fixed_files = []
+    fixes = []
+    for filename, code in files:
+        if not filename.endswith(".py"):
+            fixed_files.append((filename, code))
+            continue
+
+        try:
+            tree = ast.parse(code, filename=filename)
+        except SyntaxError:
+            fixed_files.append((filename, code))
+            continue
+
+        defined = _all_defined_names(tree) | _BUILTIN_NAMES
+        missing_modules = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and isinstance(node.value.ctx, ast.Load)
+                and node.value.id not in defined
+                and _is_stdlib_module(node.value.id)
+            ):
+                missing_modules.add(node.value.id)
+
+        if missing_modules:
+            code = "".join(f"import {name}\n" for name in sorted(missing_modules)) + code
+            fixes.extend(f"{filename}: auto-added missing 'import {name}'" for name in sorted(missing_modules))
+
+        fixed_files.append((filename, code))
+
+    return fixed_files, fixes
+
+
 def check_undefined_function_calls(py_paths: list) -> list:
     """Catch a bare call `foo(...)` where `foo` is never imported, defined, or
     otherwise bound anywhere in the file -- e.g. a test file calling
@@ -203,15 +273,57 @@ def check_undefined_function_calls(py_paths: list) -> list:
     return issues
 
 
-def check_resolve_issues(py_paths: list) -> tuple[bool, str]:
+_INI_READ_RE = re.compile(r"\.read\(\s*['\"](?P<fname>[^'\"]+\.ini)['\"]")
+
+
+def check_missing_config_file_references(py_paths: list, generated_non_py_filenames: set) -> list:
+    """Catch generated code that calls configparser's `.read('some.ini')` for a
+    config file that was never actually generated in this attempt.
+
+    configparser.read() doesn't raise FileNotFoundError for a missing file -- it
+    silently returns an empty list of successfully-read files and the call
+    becomes a no-op, leaving the parser's sections/keys empty. Nothing fails
+    until later code does config['DEFAULT']['region'] and gets a plain KeyError,
+    deep inside EXECUTE, that gives no hint the actual problem is a missing
+    file (regression case: the 2026-08-13 20260813_013836 run's ec2_manager.py/
+    s3_manager.py both called config.read('db_config.ini') across all 3
+    attempts, but the model never once included a FILE block for db_config.ini
+    -- VALIDATE's placeholder-credential checks only inspect .ini files that
+    WERE generated, so this slipped past every stage until EXECUTE's
+    KeyError: 'region', burning the whole attempt budget without the model
+    ever being told what was actually missing."""
+    issues = []
+    for path in py_paths:
+        with open(path) as f:
+            source = f.read()
+        for match in _INI_READ_RE.finditer(source):
+            fname = match.group("fname")
+            if fname not in generated_non_py_filenames:
+                issues.append(
+                    f"{os.path.basename(path)} calls .read('{fname}'), but '{fname}' was "
+                    f"never generated in this attempt -- configparser.read() silently does "
+                    f"nothing for a missing file instead of raising, so this must be caught "
+                    f"here rather than left to surface as a confusing KeyError at EXECUTE."
+                )
+    return issues
+
+
+def check_resolve_issues(py_paths: list, generated_non_py_filenames: set | None = None) -> tuple[bool, str]:
     """Runs all static resolution checks and combines every issue any of them
     finds into a single failure detail, so one retry can address all of them
-    instead of discovering them one at a time across multiple attempts."""
+    instead of discovering them one at a time across multiple attempts.
+
+    generated_non_py_filenames: basenames of every non-.py file this attempt
+    actually generated (e.g. {'db_config.ini'}). Passing None skips
+    check_missing_config_file_references entirely -- opt-in so existing
+    callers that only care about the .py-to-.py checks are unaffected."""
     issues = (
         check_undefined_module_references(py_paths)
         + check_undefined_module_usage(py_paths)
         + check_undefined_function_calls(py_paths)
     )
+    if generated_non_py_filenames is not None:
+        issues += check_missing_config_file_references(py_paths, generated_non_py_filenames)
     if not issues:
         return True, ""
     return False, "\n".join(issues)

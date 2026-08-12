@@ -30,7 +30,7 @@ from execute import execute_in_sandbox
 from generate import ask_local_model_for_code, parse_generated_files
 from lint import lint_files
 from log import get_logger
-from resolve import check_resolve_issues
+from resolve import autofix_stdlib_module_imports, check_resolve_issues
 from save import (
     confirm_save_permission,
     make_run_dir,
@@ -79,6 +79,10 @@ def run_harness(confirm=default_confirm, is_test: bool = False):
         )
         files, entry_filename = parse_generated_files(raw_output, default_filename="main.py")
 
+        files, autofix_details = autofix_stdlib_module_imports(files)
+        for detail in autofix_details:
+            logger.info(f"Auto-fix v{version}: {detail}")
+
         versioned_paths, versioned_entry = save_attempt(files, entry_filename, run_dir, version)
         for path in versioned_paths:
             marker = " (ENTRYPOINT)" if path == versioned_entry else ""
@@ -111,7 +115,8 @@ def run_harness(confirm=default_confirm, is_test: bool = False):
             error_context = lint_detail
             continue
 
-        resolve_passed, resolve_detail = check_resolve_issues(staged_py_paths)
+        staged_non_py_filenames = {os.path.basename(p) for p in staged_non_py_paths}
+        resolve_passed, resolve_detail = check_resolve_issues(staged_py_paths, staged_non_py_filenames)
         write_stage_result(run_dir, "resolve", version, resolve_passed, resolve_detail)
         logger.info(f"Resolve v{version}: {'PASS' if resolve_passed else 'FAIL - ' + resolve_detail}")
         if not resolve_passed:
