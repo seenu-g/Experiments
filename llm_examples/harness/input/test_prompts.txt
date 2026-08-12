@@ -1,0 +1,3 @@
+[2026-08-12 17:58:48] write a function that reverses a string, with a demo in main
+[2026-08-12 18:00:40] capture the raw prompt in run log test
+[2026-08-12 18:04:10] verify test_prompts split works
