@@ -7,13 +7,18 @@ COLLECTION_NAME = "arxiv_papers"
 
 client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-try:
-    collection = client.get_collection(name=COLLECTION_NAME)
-except chromadb.errors.NotFoundError:
-    raise SystemExit(
-        f"Collection '{COLLECTION_NAME}' not found in {CHROMA_PATH}. "
-        "Run load_toDB.py first to populate it."
-    )
+
+def get_collection():
+    try:
+        return client.get_collection(name=COLLECTION_NAME)
+    except chromadb.errors.NotFoundError:
+        raise SystemExit(
+            f"Collection '{COLLECTION_NAME}' not found in {CHROMA_PATH}. "
+            "Run load_toDB.py first to populate it."
+        )
+
+
+collection = get_collection()
 
 
 def query_papers(query_text, n_results=5):

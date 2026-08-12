@@ -99,6 +99,13 @@ def plot_results(sizes, cosine_times, chroma_times, path="benchmark_results.png"
     plt.show()
 
 
+queries = [
+    "machine learning model evaluation metrics",
+    "how do convolutional neural networks work",
+    "SQL query optimization techniques",
+    "testing and debugging software systems"
+]
+
 if __name__ == "__main__":
     cosine_times, chroma_times = benchmark()
     plot_results(SIZES, cosine_times, chroma_times)
