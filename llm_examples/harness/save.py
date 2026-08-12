@@ -55,12 +55,13 @@ def save_attempt(files: list, entry_filename: str, run_dir: str, version: int) -
     return versioned_paths, versioned_entry_path or versioned_paths[-1]
 
 
-def stage_for_execution(files: list, entry_filename: str, run_dir: str, version: int) -> tuple:
-    """Writes original-named copies into run_dir/_exec_v<N>/ so 'import validator' style
+def stage_attempt(files: list, entry_filename: str, run_dir: str, version: int) -> tuple:
+    """Writes original-named copies into run_dir/stage_v<N>/ so 'import validator' style
     references between generated files resolve -- the flat, version-suffixed files saved
-    by save_attempt() aren't importable by their original names, so execution needs its
-    own untouched-name staging copy. Returns (staged_dir, staged_entry_filename)."""
-    staged_dir = os.path.join(run_dir, f"_exec_v{version}")
+    by save_attempt() aren't importable by their original names. Every check from here on
+    (LINT, RESOLVE, COMPILE, VALIDATE, EXECUTE) runs against this staged copy, not the
+    versioned save. Returns (staged_dir, staged_entry_filename)."""
+    staged_dir = os.path.join(run_dir, f"stage_v{version}")
     os.makedirs(staged_dir, exist_ok=True)
     for filename, code in files:
         with open(os.path.join(staged_dir, filename), "w") as f:

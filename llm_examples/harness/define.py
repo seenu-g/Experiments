@@ -16,12 +16,14 @@ def restate_task(raw_description: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Restate the user's coding request as a spec using exactly these four "
+                    "Restate the user's coding request as a spec using exactly these five "
                     "labeled sections, plain text, no code, no preamble:\n\n"
                     "Input: <what data/values come in>\n"
                     "Output: <what is produced/returned>\n"
                     "Steps: <ordered list of the algorithm-level logic>\n"
-                    "External System called: <APIs, files, network, database touched -- or 'None'>\n\n"
+                    "External System called: <APIs, files, network, database touched -- or 'None'>\n"
+                    "Tests needed: <Yes if the user asked for tests, verification, or a test "
+                    "client/script; No if they only asked for the production code itself>\n\n"
                     "Describe behavior only. Do not describe it in terms of function names, "
                     "classes, or code structure -- the implementation may use as many "
                     "functions as it needs; that's a code-organization detail, not part of the spec."
@@ -40,6 +42,70 @@ def extract_external_system(spec: str) -> str:
     return match.group(1).strip() if match else "None"
 
 
+# Deterministic fallback for known external systems, keyed by their own name in
+# generate.py's *_INSTRUCTION gating (keep this in sync with what's actually
+# handled there). The model's own 'External System called:' classification is
+# unreliable on this small local model -- it has returned 'None' for a prompt
+# that opened with "mySQL database is on the machine" -- so a plain keyword
+# match on the user's own words is more trustworthy than its restatement of them.
+#
+# For AWS specifically, users often name a *service* (EC2, S3, ...) without
+# ever saying the word "AWS" itself -- a prompt to "manage EC2 instances,
+# S3 instances" never says "AWS" anywhere, so matching only \baws\b missed it
+# entirely. "lambda" is deliberately excluded from the service list: it's also
+# a Python keyword, and matching it bare would misclassify an ordinary
+# "write a lambda function" prompt as an AWS task.
+_KNOWN_SYSTEM_KEYWORDS = [
+    (re.compile(r"\bmysql\b", re.IGNORECASE), "MySQL"),
+    (
+        re.compile(
+            r"\b(aws|boto3|ec2|s3|dynamodb|sqs|sns|iam|cloudwatch|cloudformation|route\s*53|rds|vpc|ecs|eks)\b",
+            re.IGNORECASE,
+        ),
+        "AWS",
+    ),
+]
+
+
+def _keyword_external_system(raw_description: str) -> str | None:
+    """Scan the user's raw description for a known external-system keyword."""
+    for pattern, name in _KNOWN_SYSTEM_KEYWORDS:
+        if pattern.search(raw_description):
+            return name
+    return None
+
+
+def _apply_external_system_override(spec: str, raw_description: str, logger) -> str:
+    """If the raw description clearly names a known system the model's own spec
+    missed, rewrite the spec's 'External System called:' line to match -- this
+    is what actually gates the AWS/MySQL-specific GENERATE instructions, so
+    getting it wrong silently strips all of that guidance."""
+    keyword_system = _keyword_external_system(raw_description)
+    if keyword_system is None:
+        return spec
+
+    spec_system = extract_external_system(spec)
+    if keyword_system.lower() in spec_system.lower():
+        return spec
+
+    logger.info(
+        f"External system override: spec said '{spec_system}', but the description "
+        f"mentions '{keyword_system}' -- using '{keyword_system}'."
+    )
+    new_line = f"External System called: {keyword_system}"
+    if re.search(r"External System called:.*", spec):
+        return re.sub(r"External System called:.*", new_line, spec, count=1)
+    return spec.rstrip() + f"\n{new_line}"
+
+
+def extract_needs_tests(spec: str) -> bool:
+    """Pull the value of the spec's 'Tests needed:' line. Defaults to True (the old,
+    always-generate-tests behavior) if the field is missing, e.g. from a spec that
+    predates this field."""
+    match = re.search(r"Tests needed:\s*(.+)", spec)
+    return match.group(1).strip().lower().startswith("yes") if match else True
+
+
 def define_task(confirm, logger, is_test: bool = False) -> str:
     """Loop: describe -> restate -> confirm, until the user accepts the spec.
 
@@ -49,6 +115,7 @@ def define_task(confirm, logger, is_test: bool = False) -> str:
     while True:
         logger.info(f"User prompt:\n{description}")
         spec = restate_task(description)
+        spec = _apply_external_system_override(spec, description, logger)
         logger.info(f"Proposed spec:\n{spec}")
         if confirm("Is this correct?"):
             logger.info("Spec confirmed by user.")

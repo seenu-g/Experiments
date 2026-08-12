@@ -15,7 +15,7 @@ import tempfile
 import time
 
 from timeout_input import InputTimeout, input_with_timeout
-from validate import find_missing_libraries, find_placeholder_config_values
+from validate import find_missing_libraries, find_placeholder_config_values, find_placeholder_credentials_in_py
 
 
 def check(label, condition, detail=""):
@@ -91,6 +91,125 @@ def eval_find_placeholder_config_values():
         return ok
 
 
+def eval_empty_and_mysql_tightening():
+    with tempfile.TemporaryDirectory() as tmp:
+        empty_path = os.path.join(tmp, "empty_field.ini")
+        parser = configparser.ConfigParser()
+        parser["database"] = {"host": "localhost", "user": "", "password": "Xk29!qLm7zR"}
+        with open(empty_path, "w") as f:
+            parser.write(f)
+
+        fake_but_plausible_path = os.path.join(tmp, "fake_but_plausible.ini")
+        parser2 = configparser.ConfigParser()
+        parser2["database"] = {"host": "localhost", "user": "root", "password": "abc123"}
+        with open(fake_but_plausible_path, "w") as f:
+            parser2.write(f)
+
+        ok = True
+
+        empty_flagged = find_placeholder_config_values([empty_path])
+        ok &= check(
+            "empty value flagged even with no marker match and no external_system",
+            ("database", "user", "") in empty_flagged.get(empty_path, []),
+            empty_flagged,
+        )
+
+        not_mysql_flagged = find_placeholder_config_values([fake_but_plausible_path])
+        ok &= check(
+            "non-placeholder-looking password NOT flagged when external_system is unset",
+            not_mysql_flagged == {},
+            not_mysql_flagged,
+        )
+
+        mysql_flagged = find_placeholder_config_values([fake_but_plausible_path], external_system="MySQL Database")
+        ok &= check(
+            "same password IS flagged when external_system is MySQL (unconditional check)",
+            ("database", "password", "abc123") in mysql_flagged.get(fake_but_plausible_path, [])
+            and ("database", "user", "root") in mysql_flagged.get(fake_but_plausible_path, []),
+            mysql_flagged,
+        )
+        ok &= check(
+            "host isn't swept up by the MySQL user/password tightening",
+            not any(key == "host" for _, key, _ in mysql_flagged.get(fake_but_plausible_path, [])),
+            mysql_flagged,
+        )
+        return ok
+
+
+def eval_find_placeholder_credentials_in_py():
+    """Regression check for the 2026-08-12 20260812_212915 run: the model wrote
+    credentials into config.py as a Python dict instead of a .ini file, and VALIDATE
+    had no check for that -- it only ever scanned .ini files."""
+    with tempfile.TemporaryDirectory() as tmp:
+        config_py_path = os.path.join(tmp, "config.py")
+        with open(config_py_path, "w") as f:
+            f.write(
+                "# MySQL configuration file\n"
+                "config = {\n"
+                "    'user': 'your_username',\n"
+                "    'password': 'your_password'\n"
+                "}\n"
+            )
+
+        manager_py_path = os.path.join(tmp, "db_manager.py")
+        with open(manager_py_path, "w") as f:
+            f.write(
+                "def create_user(username, password, db_name):\n"
+                "    conn = connect_to_db()\n"
+                "    cursor = conn.cursor()\n"
+                "    cursor.execute(f\"CREATE USER '{username}'@'localhost' IDENTIFIED BY '{password}'\")\n"
+            )
+
+        real_config_py_path = os.path.join(tmp, "real_config.py")
+        with open(real_config_py_path, "w") as f:
+            f.write("config = {\n    'user': 'svc_app',\n    'password': 'Xk29!qLm7zR'\n}\n")
+
+        ok = True
+
+        found = find_placeholder_credentials_in_py([config_py_path])
+        found_keys = {(key, value) for _, key, value, _, _ in found}
+        ok &= check(
+            "placeholder credentials in config.py detected",
+            found_keys == {("user", "your_username"), ("password", "your_password")},
+            found_keys,
+        )
+
+        manager_found = find_placeholder_credentials_in_py([manager_py_path])
+        ok &= check(
+            "function parameters/kwargs (unquoted values) are NOT falsely flagged",
+            manager_found == [],
+            manager_found,
+        )
+
+        real_found = find_placeholder_credentials_in_py([real_config_py_path])
+        ok &= check(
+            "real-looking quoted credentials NOT flagged when external_system is unset",
+            real_found == [],
+            real_found,
+        )
+
+        real_found_mysql = find_placeholder_credentials_in_py([real_config_py_path], external_system="MySQL")
+        real_found_mysql_keys = {(key, value) for _, key, value, _, _ in real_found_mysql}
+        ok &= check(
+            "real-looking quoted credentials ARE flagged when external_system=MySQL (unconditional check)",
+            real_found_mysql_keys == {("user", "svc_app"), ("password", "Xk29!qLm7zR")},
+            real_found_mysql_keys,
+        )
+
+        # Verify the reported spans actually point at the value text, so a
+        # splice-based rewrite (start:end replaced with the new value) is correct.
+        path, key, old_value, start, end = found[0]
+        with open(path) as f:
+            content = f.read()
+        ok &= check(
+            "reported span slices out exactly the flagged value",
+            content[start:end] == old_value,
+            f"content[{start}:{end}] = {content[start:end]!r}, expected {old_value!r}",
+        )
+
+        return ok
+
+
 def eval_input_with_timeout_raises_on_no_response():
     """No real stdin is attached to this eval run, so input() hits EOF (or, on a
     real terminal with nobody typing, the timeout itself) either way proving the
@@ -113,6 +232,8 @@ if __name__ == "__main__":
     results = [
         eval_find_missing_libraries(),
         eval_find_placeholder_config_values(),
+        eval_empty_and_mysql_tightening(),
+        eval_find_placeholder_credentials_in_py(),
         eval_input_with_timeout_raises_on_no_response(),
     ]
     sys.exit(0 if all(results) else 1)
