@@ -1,0 +1,10 @@
+.env
+__pycache__/
+chroma_db/
+models/
+harness_sandbox_*/
+harness_sandbox_*/*
+harness_sandbox_*/*.py
+*.db
+*.def
+*.dll
