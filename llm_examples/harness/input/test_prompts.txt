@@ -1,3 +1,5 @@
 [2026-08-12 17:58:48] write a function that reverses a string, with a demo in main
 [2026-08-12 18:00:40] capture the raw prompt in run log test
 [2026-08-12 18:04:10] verify test_prompts split works
+[2026-08-13 15:14:14] Write python code to print first 30 prime numbers?
+[2026-08-13 17:02:37] Write a function that adds two numbers. Show an example in main printing the result of 5 plus 3.
