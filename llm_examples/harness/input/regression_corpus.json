@@ -1,0 +1,74 @@
+[
+  {
+    "id": "sockets_echo",
+    "category": "networking",
+    "verification": "deterministic",
+    "language": "python",
+    "libraries": [],
+    "description": "Write a simple TCP client-server program using sockets: the server echoes back whatever the client sends."
+  },
+  {
+    "id": "matplotlib_bar_chart",
+    "category": "visualization",
+    "verification": "deterministic",
+    "language": "python",
+    "libraries": ["matplotlib"],
+    "description": "Write a program that generates a bar chart of monthly sales figures using matplotlib and saves it to a PNG file."
+  },
+  {
+    "id": "pandas_average_score",
+    "category": "data",
+    "verification": "deterministic",
+    "language": "python",
+    "libraries": ["pandas"],
+    "description": "Write a program that reads a CSV of student names and scores using pandas, and prints the average score per student."
+  },
+  {
+    "id": "python_lambda",
+    "category": "language_feature",
+    "verification": "deterministic",
+    "language": "python",
+    "libraries": [],
+    "description": "Write a program that uses lambda functions to filter a list of numbers for even values and sort a list of dictionaries by a given key."
+  },
+  {
+    "id": "networkx_knowledge_graph",
+    "category": "knowledge_graph",
+    "verification": "deterministic",
+    "language": "python",
+    "libraries": ["networkx"],
+    "description": "Write a program that builds a simple knowledge graph of people and their relationships using networkx, adds a few people and relationships, and prints all relationships for a given person."
+  },
+  {
+    "id": "pandas_matplotlib_combined",
+    "category": "data",
+    "verification": "deterministic",
+    "language": "python",
+    "libraries": ["pandas", "matplotlib"],
+    "description": "Write a program that reads a CSV of monthly sales data using pandas, computes the total per month, and generates a matplotlib bar chart of the totals, saved to a PNG file."
+  },
+  {
+    "id": "ollama_direct_call",
+    "category": "ai",
+    "verification": "probabilistic",
+    "language": "python",
+    "libraries": [],
+    "description": "Write a Python program that sends a prompt to a local Ollama model using the ollama library and prints the response."
+  },
+  {
+    "id": "langchain_ollama",
+    "category": "ai",
+    "verification": "probabilistic",
+    "language": "python",
+    "libraries": ["langchain", "langchain-ollama"],
+    "description": "Write a Python program using langchain that connects to a local Ollama model and answers a simple question."
+  },
+  {
+    "id": "llm_agent_tools",
+    "category": "ai_agent",
+    "verification": "probabilistic",
+    "language": "python",
+    "libraries": ["langchain", "langchain-ollama", "mysql-connector-python", "duckduckgo-search"],
+    "description": "Write a program that uses a local LLM with tool-calling to answer questions using three tools: getting the current date/time, performing a web search, and querying a MySQL database. Demonstrate the agent using at least one of each tool."
+  }
+]
