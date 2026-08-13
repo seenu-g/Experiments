@@ -252,6 +252,36 @@ def eval_source_instruction_forbids_unrequested_command_dispatcher():
     return ok
 
 
+def eval_source_instruction_forbids_writing_tests_when_fixing_a_test_failure():
+    """Regression check for the 2026-08-13 20260813_162026 run: heap_sort's v1 production
+    code was actually correct -- the real bug was a wrong expected value in the TEST round's
+    own assertion (test_heapify expected a swap that shouldn't happen). EXECUTE failing resets
+    BOTH rounds ('ambiguous which side is wrong'), so v2's source round got fed v1's test
+    failure traceback as error_context -- and, despite being told 'no tests', got confused by
+    being handed a test failure to 'fix' and wrote a test-shaped file itself
+    (test_heap_sort_v2.py, calling heapify() without ever defining it), which RESOLVE
+    correctly caught as a plain source-round failure. v3 repeated the same confusion. The run
+    exhausted its retry budget without ever getting back to the v1 code that already worked."""
+    ok = True
+    source = build_source_system_instruction()
+    ok &= check(
+        "source instruction addresses being handed a test-failure error to 'fix'",
+        "test assertion failure" in source.lower(),
+        source,
+    )
+    ok &= check(
+        "source instruction explicitly forbids writing test code in that situation",
+        "do not write any test code" in source.lower() or "do not write any test" in source.lower(),
+        source,
+    )
+    ok &= check(
+        "source instruction tells the model its logic is likely already correct in that case",
+        "already correct" in source.lower(),
+        source,
+    )
+    return ok
+
+
 def eval_test_instruction_requires_test_file_to_run_its_tests():
     """Regression check for the 2026-08-13 20260813_012157 run: ec2_manager_test_v2.py
     defined 6 @mock_aws test_*() functions but never called any of them -- no
@@ -754,6 +784,7 @@ if __name__ == "__main__":
         eval_stray_closing_fence_stripped(),
         eval_duplicate_file_block_deduped(),
         eval_source_instruction_forbids_unrequested_command_dispatcher(),
+        eval_source_instruction_forbids_writing_tests_when_fixing_a_test_failure(),
         eval_test_instruction_requires_test_file_to_run_its_tests(),
         eval_config_format_instruction_requires_ini_file_to_be_output(),
         eval_external_system_gates_aws_instruction(),

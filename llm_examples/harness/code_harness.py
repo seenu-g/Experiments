@@ -161,7 +161,7 @@ def run_harness(
             if not lint_passed:
                 _skip_downstream(
                     run_dir, version, downstream_after_lint,
-                    "skipped: source lint failed", "source lint failed", logger,
+                    "source lint failed", "source lint failed", logger,
                 )
                 source_error_context = lint_detail
                 continue
@@ -173,7 +173,7 @@ def run_harness(
             if not resolve_passed:
                 _skip_downstream(
                     run_dir, version, downstream_after_resolve,
-                    "skipped: source resolve failed", "source resolve failed", logger,
+                    "source resolve failed", "source resolve failed", logger,
                 )
                 source_error_context = resolve_detail
                 continue
@@ -184,7 +184,7 @@ def run_harness(
             if not compile_passed:
                 _skip_downstream(
                     run_dir, version, downstream_after_compile,
-                    "skipped: source compile failed", "source compile failed", logger,
+                    "source compile failed", "source compile failed", logger,
                 )
                 source_error_context = compile_detail
                 continue
@@ -239,7 +239,7 @@ def run_harness(
             if not test_lint_passed:
                 _skip_downstream(
                     run_dir, version, ["test_resolve", "test_compile", "execute"],
-                    "skipped: test lint failed", "test lint failed", logger,
+                    "test lint failed", "test lint failed", logger,
                 )
                 test_error_context = test_lint_detail
                 continue
@@ -255,7 +255,7 @@ def run_harness(
             if not test_resolve_passed:
                 _skip_downstream(
                     run_dir, version, ["test_compile", "execute"],
-                    "skipped: test resolve failed", "test resolve failed", logger,
+                    "test resolve failed", "test resolve failed", logger,
                 )
                 test_error_context = test_resolve_detail
                 continue
@@ -268,7 +268,7 @@ def run_harness(
             if not test_compile_passed:
                 _skip_downstream(
                     run_dir, version, ["execute"],
-                    "skipped: test compile failed", "test compile failed", logger,
+                    "test compile failed", "test compile failed", logger,
                 )
                 test_error_context = test_compile_detail
                 continue
@@ -285,7 +285,7 @@ def run_harness(
         )
         if not validate_passed:
             _skip_downstream(
-                run_dir, version, ["execute"], f"skipped: {validate_detail}", "validate failed", logger
+                run_dir, version, ["execute"], validate_detail, "validate failed", logger
             )
             logger.info(
                 f"Stopping run -- this is an environment problem regenerating code won't fix. "

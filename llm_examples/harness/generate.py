@@ -139,7 +139,12 @@ _SOURCE_ONLY_INSTRUCTION = (
     "__main__ example. Do not invent a single dispatcher function that parses a command string "
     "(e.g. handle_command('ec2 my-instance create')) to route between operations unless the task "
     "explicitly asks for a CLI or command-line interface -- an unrequested parsing layer is code a "
-    "later test round then also has to exercise indirectly, for no benefit."
+    "later test round then also has to exercise indirectly, for no benefit. If the error you're "
+    "fixing is a test assertion failure (e.g. 'AssertionError: Lists differ', a unittest FAIL "
+    "block) rather than a Python exception raised by your own code, that means your production "
+    "logic is likely already correct and the test itself was wrong -- do NOT write any test code "
+    "here in response to it; resubmit your logic unchanged unless you can identify an actual "
+    "defect in it."
 )
 
 _TEST_ONLY_INSTRUCTION = (
