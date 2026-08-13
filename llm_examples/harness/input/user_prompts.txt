@@ -12,3 +12,5 @@
 [2026-08-13 16:22:01] sort the array elements by Heap Sort. have main function that tests it is working
 [2026-08-13 16:47:26] Given a root of a Binary Tree, your task is to return its Inorder Traversal, preoder and post order,the maximum depth of the tree.  from main function, insert some sample and test functions written
 [2026-08-13 16:59:23] Given an array of positive integers arr[], return the second largest element from the array. If the second largest element doesn't exist then return -1. from main function, insert some sample and test function
+[2026-08-13 17:12:45] You are given an array of strings arr[] that represents a valid arithmetic expression written in Postfix Notation. Your task is to evaluate the expression and return an integer representing its value. from main function, insert some valid and invalid arihtmetic expression to test code generated
+[2026-08-13 17:47:44] Opening brackets must be closed in the correct order.
