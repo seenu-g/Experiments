@@ -112,6 +112,27 @@ def describe_tool_type_matches(description: str) -> list:
     ]
 
 
+def _print_tool_type_mapping(description: str) -> None:
+    """One line per category, e.g. local_system_call -> 'date', 'time', 'laptop' --
+    grouped rather than one line per individual keyword match, so a phrase like
+    'system info of the laptop' (two separate local_system_call keyword hits)
+    doesn't print as two visually-separate, confusing-looking category lines."""
+    matches = describe_tool_type_matches(description)
+    if not matches:
+        print("  (no known tool type matched -- falling back to all known types)")
+        return
+
+    matched_text_by_category = {}
+    for text, category in matches:
+        matched_text_by_category.setdefault(category, [])
+        if text not in matched_text_by_category[category]:
+            matched_text_by_category[category].append(text)
+
+    for category, texts in matched_text_by_category.items():
+        quoted = ", ".join(f"'{t}'" for t in texts)
+        print(f"  {category} -> {quoted}")
+
+
 def define_task() -> str:
     """Show the definition FIRST, then ask for input -- reversed from asking
     first and only explaining afterward. No LLM call here: tool-calling
@@ -127,20 +148,14 @@ def define_task() -> str:
         f"(via Ollama).\n"
     )
     print("Default task's tool-to-prompt mapping:")
-    for text, category in describe_tool_type_matches(DEFAULT_TASK):
-        print(f"  '{text}' -> {category}")
+    _print_tool_type_mapping(DEFAULT_TASK)
 
     description = input("\nDescribe the agent task (blank = use default above): ").strip()
     if not description:
         return DEFAULT_TASK
 
-    matches = describe_tool_type_matches(description)
     print("\nYour task's tool-to-prompt mapping:")
-    if matches:
-        for text, category in matches:
-            print(f"  '{text}' -> {category}")
-    else:
-        print("  (no known tool type matched -- falling back to all known types)")
+    _print_tool_type_mapping(description)
 
     return description
 
@@ -200,9 +215,14 @@ LOCAL_SYSTEM_CALL_INSTRUCTION = (
     "For any tool that reads THIS machine's own state (current date/time, system info, running "
     "processes) -- import platform and import psutil at the top (both already installed); this "
     "exact pair of imports has been observed missing before even though such tools use them, "
-    "causing NameError. Use real values only (platform.system(), psutil.cpu_count(), "
-    "psutil.virtual_memory(), psutil.disk_usage('/'), psutil.process_iter([\"pid\", \"name\"]) "
-    "capped to the first 10, etc.) -- never hardcode or fake a value."
+    "causing NameError. Use real values only, never hardcode or fake a value:\n"
+    "   - The current date/time tool MUST use 'import datetime' then "
+    "'datetime.datetime.now()' -- NOT platform.system() (that returns the OS name, e.g. "
+    "'Windows', not a date/time -- this exact mix-up has been observed before, where a "
+    "date/time function was implemented by copy-pasting the system-info function's line).\n"
+    "   - System info: platform.system(), psutil.cpu_count(), psutil.virtual_memory(), "
+    "psutil.disk_usage('/').\n"
+    "   - Running processes: psutil.process_iter([\"pid\", \"name\"]), capped to the first 10."
 )
 
 NO_AUTH_API_INSTRUCTION = (
