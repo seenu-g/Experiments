@@ -27,8 +27,10 @@ from define import (
 from generate import (
     AWS_INSTRUCTION,
     AWS_TEST_INSTRUCTION,
+    LANGCHAIN_INSTRUCTION,
     MYSQL_INSTRUCTION,
     MYSQL_TEST_INSTRUCTION,
+    OLLAMA_INSTRUCTION,
     _format_source_code_context,
     build_source_system_instruction,
     build_test_system_instruction,
@@ -369,6 +371,75 @@ def eval_config_format_instruction_requires_ini_file_to_be_output():
         "ONE INI file" in aws and "never split across separate config files" in aws,
         aws,
     )
+    return ok
+
+
+def eval_ollama_and_langchain_instructions():
+    """Regression check for the 2026-08-13 20260813_181809/20260813_182028 runs: the model
+    hallucinated a nonexistent ollama.initialize() function and a nonexistent
+    langchain.LangChainClient class, identically, 3 attempts in a row -- DEFINE correctly
+    classified the external system in both runs, but GENERATE had no corresponding
+    instruction the way it does for AWS/MySQL, so the model had nothing to ground it and
+    just guessed. OLLAMA_INSTRUCTION/LANGCHAIN_INSTRUCTION close that gap the same way
+    AWS_INSTRUCTION/MYSQL_INSTRUCTION already do for their systems."""
+    ok = True
+
+    ollama_source = build_source_system_instruction(external_system="Ollama")
+    ok &= check(
+        "OLLAMA_INSTRUCTION included when external_system mentions Ollama",
+        OLLAMA_INSTRUCTION in ollama_source,
+        ollama_source,
+    )
+    ok &= check(
+        "instruction names the real ollama.chat/ollama.generate API, not a guess",
+        "ollama.chat(" in ollama_source and "ollama.generate(" in ollama_source,
+        ollama_source,
+    )
+    ok &= check(
+        "instruction explicitly says there is no ollama.initialize()",
+        "ollama.initialize()" in ollama_source,
+        ollama_source,
+    )
+    ok &= check(
+        "instruction tells the model to actually let the LLM pick the tool, not keyword-match it",
+        "keyword-match" in ollama_source.lower(),
+        ollama_source,
+    )
+    ok &= check(
+        "LANGCHAIN_INSTRUCTION excluded when external_system doesn't mention langchain",
+        LANGCHAIN_INSTRUCTION not in ollama_source,
+        ollama_source,
+    )
+
+    langchain_source = build_source_system_instruction(external_system="Local Ollama model via LangChain")
+    ok &= check(
+        "LANGCHAIN_INSTRUCTION included when external_system mentions LangChain",
+        LANGCHAIN_INSTRUCTION in langchain_source,
+        langchain_source,
+    )
+    ok &= check(
+        "instruction names the real langchain_ollama.OllamaLLM API, not a guess",
+        "langchain_ollama" in langchain_source and "OllamaLLM" in langchain_source,
+        langchain_source,
+    )
+    ok &= check(
+        "instruction explicitly says there is no langchain.LangChainClient",
+        "LangChainClient" in langchain_source,
+        langchain_source,
+    )
+    ok &= check(
+        "OLLAMA_INSTRUCTION also included when external_system mentions LangChain (both can apply)",
+        OLLAMA_INSTRUCTION in langchain_source,
+        langchain_source,
+    )
+
+    neither_source = build_source_system_instruction(external_system="MySQL")
+    ok &= check(
+        "neither instruction appears for an unrelated external system",
+        OLLAMA_INSTRUCTION not in neither_source and LANGCHAIN_INSTRUCTION not in neither_source,
+        neither_source,
+    )
+
     return ok
 
 
@@ -756,6 +827,54 @@ def eval_apply_external_system_override():
         extract_external_system(lambda_unchanged),
     )
 
+    # Regression check for the 2026-08-13 20260813_182223 run: the raw prompt
+    # said "uses a local LLM with tool-calling" and also needed MySQL. The old
+    # override *replaced* the whole field, so if it had matched "Ollama" it
+    # would have silently thrown away an already-correct "MySQL database,
+    # internet" classification. The override must be additive.
+    mysql_and_llm_raw = (
+        "Write a program that uses a local LLM with tool-calling to answer questions "
+        "using three tools: getting the current date/time, performing a web search, "
+        "and querying a MySQL database."
+    )
+    spec_saying_mysql_internet = (
+        "Input: A question.\n\nOutput: An answer.\n\nSteps:\n1. Answer it.\n\n"
+        "External System called: MySQL database, internet\n\nTests needed: No"
+    )
+    additive_corrected = _apply_external_system_override(spec_saying_mysql_internet, mysql_and_llm_raw, logger)
+    additive_value = extract_external_system(additive_corrected)
+    ok &= check(
+        "override ADDS 'Ollama' rather than replacing the already-correct MySQL/internet classification",
+        "mysql" in additive_value.lower() and "ollama" in additive_value.lower(),
+        additive_value,
+    )
+
+    # Mentions both "langchain" and "Ollama" -- both should match (additive), not just one.
+    langchain_raw = "Write a program using langchain that connects to a local Ollama model."
+    langchain_corrected = _apply_external_system_override(spec_saying_none, langchain_raw, logger)
+    langchain_value = extract_external_system(langchain_corrected)
+    ok &= check(
+        "override recognizes LangChain (and Ollama, since the raw text names both)",
+        "langchain" in langchain_value.lower() and "ollama" in langchain_value.lower(),
+        langchain_value,
+    )
+
+    ollama_raw = "Write a Python program that sends a prompt to a local Ollama model."
+    ollama_corrected = _apply_external_system_override(spec_saying_none, ollama_raw, logger)
+    ok &= check(
+        "override recognizes bare 'ollama'",
+        extract_external_system(ollama_corrected) == "Ollama",
+        extract_external_system(ollama_corrected),
+    )
+
+    local_llm_raw = "Write a program that uses a local LLM with tool-calling."
+    local_llm_corrected = _apply_external_system_override(spec_saying_none, local_llm_raw, logger)
+    ok &= check(
+        "override recognizes 'local llm'/'tool-calling' even when 'ollama' is never said literally",
+        extract_external_system(local_llm_corrected) == "Ollama",
+        extract_external_system(local_llm_corrected),
+    )
+
     return ok
 
 
@@ -788,6 +907,7 @@ if __name__ == "__main__":
         eval_test_instruction_requires_test_file_to_run_its_tests(),
         eval_config_format_instruction_requires_ini_file_to_be_output(),
         eval_external_system_gates_aws_instruction(),
+        eval_ollama_and_langchain_instructions(),
         eval_aws_instruction_requires_region_and_credentials(),
         eval_aws_test_instruction_forbids_deprecated_moto_api(),
         eval_aws_test_instruction_requires_self_contained_tests(),

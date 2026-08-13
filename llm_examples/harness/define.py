@@ -68,6 +68,13 @@ def extract_external_system(spec: str) -> str:
 # entirely. "lambda" is deliberately excluded from the service list: it's also
 # a Python keyword, and matching it bare would misclassify an ordinary
 # "write a lambda function" prompt as an AWS task.
+#
+# Ollama/LangChain: "local llm"/"tool-calling" catches prompts that never say
+# "ollama" literally (e.g. "uses a local LLM with tool-calling" -- the
+# 2026-08-13 20260813_182223 run, where DEFINE's own spec named MySQL and
+# "internet" but missed the LLM itself entirely, so GENERATE never got any
+# LLM-specific guidance and built a keyword-matching dispatcher instead of an
+# actual LLM call).
 _KNOWN_SYSTEM_KEYWORDS = [
     (re.compile(r"\bmysql\b", re.IGNORECASE), "MySQL"),
     (
@@ -77,35 +84,47 @@ _KNOWN_SYSTEM_KEYWORDS = [
         ),
         "AWS",
     ),
+    (re.compile(r"\bollama\b|\blocal llm\b|\btool[- ]calling\b", re.IGNORECASE), "Ollama"),
+    (re.compile(r"\blangchain\b", re.IGNORECASE), "LangChain"),
 ]
 
 
-def _keyword_external_system(raw_description: str) -> str | None:
-    """Scan the user's raw description for a known external-system keyword."""
-    for pattern, name in _KNOWN_SYSTEM_KEYWORDS:
-        if pattern.search(raw_description):
-            return name
-    return None
+def _keyword_external_systems(raw_description: str) -> list[str]:
+    """Scan the user's raw description for every known external-system keyword
+    that matches -- a task can genuinely need more than one (e.g. MySQL AND a
+    local LLM), so this returns all matches, not just the first."""
+    return [name for pattern, name in _KNOWN_SYSTEM_KEYWORDS if pattern.search(raw_description)]
 
 
 def _apply_external_system_override(spec: str, raw_description: str, logger) -> str:
-    """If the raw description clearly names a known system the model's own spec
-    missed, rewrite the spec's 'External System called:' line to match -- this
-    is what actually gates the AWS/MySQL-specific GENERATE instructions, so
-    getting it wrong silently strips all of that guidance."""
-    keyword_system = _keyword_external_system(raw_description)
-    if keyword_system is None:
+    """If the raw description clearly names known system(s) the model's own spec
+    missed, add them to the spec's 'External System called:' line -- this is
+    what actually gates the AWS/MySQL/Ollama/LangChain-specific GENERATE
+    instructions, so getting it wrong silently strips all of that guidance.
+
+    Additive, not a wholesale replacement: a spec that already correctly named
+    one system (e.g. 'MySQL database, internet') must keep that when a second,
+    separately-detected system (e.g. 'Ollama') gets added -- overwriting the
+    whole line would silently lose a classification that was already right."""
+    matched_systems = _keyword_external_systems(raw_description)
+    if not matched_systems:
         return spec
 
     spec_system = extract_external_system(spec)
-    if keyword_system.lower() in spec_system.lower():
+    missing = [name for name in matched_systems if name.lower() not in spec_system.lower()]
+    if not missing:
         return spec
+
+    if spec_system.strip().lower() in ("", "none"):
+        new_value = ", ".join(matched_systems)
+    else:
+        new_value = spec_system.strip() + ", " + ", ".join(missing)
 
     logger.info(
         f"External system override: spec said '{spec_system}', but the description "
-        f"mentions '{keyword_system}' -- using '{keyword_system}'."
+        f"also mentions {missing} -- using '{new_value}'."
     )
-    new_line = f"External System called: {keyword_system}"
+    new_line = f"External System called: {new_value}"
     if re.search(r"External System called:.*", spec):
         return re.sub(r"External System called:.*", new_line, spec, count=1)
     return spec.rstrip() + f"\n{new_line}"
