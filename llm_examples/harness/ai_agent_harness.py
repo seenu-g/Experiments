@@ -39,13 +39,14 @@ import builtins
 import os
 import py_compile
 import re
+import shutil
 import subprocess
 import sys
 import time
 
 import ollama
 
-_BUILTIN_NAMES = set(dir(builtins))
+_BUILTIN_NAMES = set(dir(builtins)) | {"__name__", "__file__", "__doc__"}
 
 # =====================================================================
 # GLOBAL CONFIGURATION
@@ -64,108 +65,228 @@ DEFAULT_TASK = (
 
 
 # =====================================================================
-# GENERATE
+# DEFINE -- restate + confirm the task before generating anything. Written
+# fresh here, not imported from the shared harness's define.py, to keep this
+# file fully standalone (see module docstring). Deliberately minimal: this
+# script's GENERATE prompts are still hardcoded around the specific 4 tools
+# in DEFAULT_TASK (web_search via ddgs, get_system_info via psutil, etc.),
+# so this step confirms intent rather than trying to generalize to an
+# arbitrary tool set the way define.py's full spec extraction does.
 # =====================================================================
-def ask_local_model_for_code(prompt: str, error_context: str = "", log=print) -> str:
-    system_instruction = (
-        "You are an expert Python software engineer. Your task is to output ONLY valid, "
-        "executable Python code, with no conversational preamble, explanations, or commentary. "
-        "Every 'import' statement required by any function, class, or standard-library call you use "
-        "must be included at the top of its file. Never reference a module or name without importing it first.\n\n"
-        "This script will be run non-interactively with no terminal attached. Never call 'input()' "
-        "or otherwise wait on interactive/stdin input. Demonstrate the code with hardcoded example "
-        "arguments under 'if __name__ == \"__main__\":'.\n\n"
-        "Output exactly one ```python ... ``` block.\n\n"
-        "The task requires tool-calling: the LLM itself must decide which tool(s) to invoke via "
-        f"Ollama's 'tools' API -- do not keyword-match the user's question yourself in plain Python; "
-        "that defeats the point of the task. Import the package with plain 'import ollama' at the "
-        "top of the file, then call ollama.chat(...) -- never 'from ollama import ollama', which is "
-        "not a valid import (ollama does not export a name called 'ollama' from itself) and has been "
-        "observed before as a repeated ImportError that survived unchanged across retries even after "
-        "being shown the exact traceback. Use the real 'ollama' package API "
-        f"(model='{LOCAL_MODEL}'), never a placeholder-looking model name. Follow this exact shape, "
-        "in this order -- do not invent your own control flow or reorder these pieces:\n\n"
-        "1. TOOLS = [ ... ]  # one dict per tool, in EXACTLY this shape -- copy it, do not "
-        "invent a different 'parameters' shape:\n"
-        "   {\n"
-        "       'type': 'function',\n"
-        "       'function': {\n"
-        "           'name': 'get_current_date_time',\n"
-        "           'description': '...',\n"
-        "           'parameters': {'type': 'object', 'properties': {}, 'required': []},\n"
-        "       },\n"
-        "   }\n"
-        "   For a tool that takes an argument (e.g. web_search(query)), 'properties' is not empty:\n"
-        "   'parameters': {'type': 'object', 'properties': {'query': {'type': 'string', "
-        "'description': '...'}}, 'required': ['query']}\n"
-        "   'parameters' MUST always be a dict shaped exactly like the two examples above -- NEVER "
-        "a bare list like [] or ['query']. A bare list has been observed before to fail with "
-        "'pydantic_core.ValidationError: Input should be a valid dictionary', across multiple "
-        "separate attempts, so double check this shape specifically before finishing.\n"
-        "2. import platform and import psutil at the top of the file (both already installed) -- "
-        "these exact two imports have been observed missing before even though get_system_info/"
-        "get_running_processes below use them, causing NameError. Then define "
-        "def get_current_date_time(): ..., def web_search(query): ..., "
-        "def get_system_info(): ..., and def get_running_processes(): ...  -- the real tool "
-        "functions, defined here, BEFORE the registry below. A dict literal evaluates immediately "
-        "when the module loads, so referencing a function name in a dict before its own 'def' has "
-        "run raises NameError -- this exact ordering mistake has been observed before, avoid it.\n"
-        "   - web_search(query) must do a REAL search using the 'ddgs' package (already installed) -- "
-        "'from ddgs import DDGS' then 'results = list(DDGS().text(query, max_results=3))', and "
-        "return the results (e.g. join each result's 'title' and 'body'). Never fake, stub, or "
-        "hardcode a placeholder search result -- a stubbed web_search has been observed before to "
-        "make the agent's final answer hallucinate stale/wrong information instead of using real "
-        "results. Do not use the older 'duckduckgo_search' package -- it is deprecated and its "
-        "DDGS().text() call returns an empty result list; the real search functionality now lives "
-        "in the 'ddgs' package under the same DDGS().text() method signature.\n"
-        "   - get_system_info() must use the real 'psutil' and 'platform' packages (both already "
-        "installed) -- e.g. platform.system(), platform.processor(), psutil.cpu_count(), "
-        "psutil.virtual_memory(), psutil.disk_usage('/') -- and return a real summary string built "
-        "from their actual return values. Never hardcode or fake any of these values.\n"
-        "   - get_running_processes() must use the real 'psutil' package -- "
-        "'for p in psutil.process_iter([\"pid\", \"name\"])' -- and return a real list/summary of "
-        "actual running process names and PIDs. Cap it to a reasonable number (e.g. the first 10) "
-        "so the result stays short. Never hardcode or fake a process list.\n"
-        "3. TOOL_REGISTRY = {'get_current_date_time': get_current_date_time, 'web_search': web_search, "
-        "'get_system_info': get_system_info, 'get_running_processes': get_running_processes}\n"
-        "4. def ask_agent(question):\n"
-        "       messages = [{'role': 'user', 'content': question}]\n"
-        f"       first = ollama.chat(model='{LOCAL_MODEL}', messages=messages, tools=TOOLS)\n"
-        "       reply = first['message']\n"
-        "       tool_calls = reply.get('tool_calls')\n"
-        "       if not tool_calls:\n"
-        "           return reply['content']\n"
-        "       messages.append(reply)\n"
-        "       for call in tool_calls:\n"
-        "           name = call['function']['name']\n"
-        "           args = call['function']['arguments']\n"
-        "           result = TOOL_REGISTRY[name](**args)\n"
-        "           messages.append({'role': 'tool', 'content': str(result), 'name': name})\n"
-        f"       second = ollama.chat(model='{LOCAL_MODEL}', messages=messages, tools=TOOLS)\n"
-        "       return second['message']['content']\n\n"
-        "5. Under 'if __name__ == \"__main__\":', call ask_agent() with at least four different "
-        "example questions, chosen so each one should naturally route to a different one of the four "
-        "tools -- one question that happens to need every tool proves nothing about whether the "
-        "model, rather than your code, made the choice.\n\n"
-        "Never call get_current_date_time(), web_search(), get_system_info(), or "
-        "get_running_processes() directly from your own Python logic based on keywords found in the "
-        "question -- the ONLY thing allowed to decide which tool(s) run is the 'tool_calls' the model "
-        "returns from the first ollama.chat call."
+# Keyword-based, not model-based: the main harness's own define.py found LLM
+# classification of "what external system/category is this" unreliable on a
+# small local model (see define.py's _KNOWN_SYSTEM_KEYWORDS comment) and
+# switched to deterministic keyword matching instead. Same reasoning here --
+# only the two categories actually exercised by DEFAULT_TASK today. Add a
+# new (pattern, category) entry, and a matching *_INSTRUCTION snippet below,
+# only when a real task actually needs that category -- not speculatively.
+_TOOL_TYPE_KEYWORDS = [
+    (
+        re.compile(
+            r"date|time|system info|running processes|\bprocesses\b|laptop|cpu|memory|disk",
+            re.IGNORECASE,
+        ),
+        "local_system_call",
+    ),
+    (re.compile(r"web search|search the web|internet search", re.IGNORECASE), "no_auth_api"),
+]
+
+
+def classify_tool_types(description: str) -> set:
+    """Returns the set of tool-type categories DEFAULT_TASK's own wording
+    matches. Falls back to both known categories if nothing matched, rather
+    than silently building agent_tools.py with no type-specific guidance at
+    all for a description that phrased things differently than expected."""
+    matched = {name for pattern, name in _TOOL_TYPE_KEYWORDS if pattern.search(description)}
+    return matched or {name for _, name in _TOOL_TYPE_KEYWORDS}
+
+
+def describe_tool_type_matches(description: str) -> list:
+    """Returns [(matched_text, category), ...] -- which specific words in the
+    description matched which tool-type category, so DEFINE can show exactly
+    what it identified rather than just the category names."""
+    return [
+        (match.group(0), category)
+        for pattern, category in _TOOL_TYPE_KEYWORDS
+        for match in pattern.finditer(description)
+    ]
+
+
+def define_task() -> str:
+    """Show the definition FIRST, then ask for input -- reversed from asking
+    first and only explaining afterward. No LLM call here: tool-calling
+    itself needs a real LLM decision (that's the whole point -- without one
+    this would just be a fixed procedural call), but classifying which part
+    of the TEXT maps to which tool type is deterministic and reuses the same
+    classify_tool_types() that actually gates GENERATE's instructions, so
+    what's shown here is exactly what will be used, not a separate guess."""
+    print(f"Default task:\n{DEFAULT_TASK}\n")
+    print(
+        f"Tool-calling requires a real LLM in the loop to decide which tool(s) to call -- "
+        f"without one this is just a fixed procedural call, not an agent. Model: {LOCAL_MODEL} "
+        f"(via Ollama).\n"
     )
+    print("Default task's tool-to-prompt mapping:")
+    for text, category in describe_tool_type_matches(DEFAULT_TASK):
+        print(f"  '{text}' -> {category}")
 
-    if error_context:
-        system_instruction += f"\n\nCRITICAL: Your previous code had this problem. Completely fix it:\n{error_context}"
+    description = input("\nDescribe the agent task (blank = use default above): ").strip()
+    if not description:
+        return DEFAULT_TASK
 
+    matches = describe_tool_type_matches(description)
+    print("\nYour task's tool-to-prompt mapping:")
+    if matches:
+        for text, category in matches:
+            print(f"  '{text}' -> {category}")
+    else:
+        print("  (no known tool type matched -- falling back to all known types)")
+
+    return description
+
+
+TOOLS_FILENAME = "agent_tools.py"
+AGENT_FILENAME = "main.py"
+
+_BASE_INSTRUCTION = (
+    "You are an expert Python software engineer. Your task is to output ONLY valid, "
+    "executable Python code, with no conversational preamble, explanations, or commentary. "
+    "Every 'import' statement required by any function or standard-library call you use must "
+    "be included at the top of the file. Never reference a module or name without importing it "
+    "first. Output exactly one ```python ... ``` block."
+)
+
+
+def _ask(system_instruction: str, user_content: str, log) -> str:
     log(f"Querying {LOCAL_MODEL}...")
     response = ollama.chat(
         model=LOCAL_MODEL,
         messages=[
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": user_content},
         ],
         options={"temperature": 0.1},
     )
     return response["message"]["content"]
+
+
+# =====================================================================
+# GENERATE -- ROUND 1: agent_tools.py (TOOLS schema, the 4 real tool
+# functions, TOOL_REGISTRY). This file only needs to know about the tools
+# themselves -- nothing about ollama.chat or the agent loop.
+# =====================================================================
+_STRUCTURE_INSTRUCTION = (
+    f"Write a single importable module, {TOOLS_FILENAME} -- no 'if __name__' block, this file "
+    "is never run directly, only imported. Structure, regardless of which tools it contains:\n\n"
+    "1. All tool functions defined FIRST, before TOOLS/TOOL_REGISTRY below them -- a dict/list "
+    "literal evaluates immediately at module load, so referencing a function name before its "
+    "own 'def' has run raises NameError.\n\n"
+    "2. TOOLS = [ ... ] -- one dict per tool, in EXACTLY this shape (copy it, do not invent a "
+    "different 'parameters' shape):\n"
+    "   {'type': 'function', 'function': {'name': 'tool_name', 'description': '...', "
+    "'parameters': {'type': 'object', 'properties': {}, 'required': []}}}\n"
+    "   For a tool with an argument (e.g. a query string), 'properties' is not empty:\n"
+    "   'parameters': {'type': 'object', 'properties': {'query': {'type': 'string', "
+    "'description': '...'}}, 'required': ['query']}\n"
+    "   'parameters' MUST always be a dict shaped like the two examples above -- NEVER a bare "
+    "list like [] or ['query']. A bare list has been observed before to fail with "
+    "'pydantic_core.ValidationError: Input should be a valid dictionary'.\n\n"
+    "3. TOOL_REGISTRY = {'tool_name': tool_function, ...} -- one entry per tool function above, "
+    "this exact dict, this exact name. It has been observed missing before (defined nowhere "
+    "despite being used elsewhere) -- double check it's actually present before finishing."
+)
+
+LOCAL_SYSTEM_CALL_INSTRUCTION = (
+    "For any tool that reads THIS machine's own state (current date/time, system info, running "
+    "processes) -- import platform and import psutil at the top (both already installed); this "
+    "exact pair of imports has been observed missing before even though such tools use them, "
+    "causing NameError. Use real values only (platform.system(), psutil.cpu_count(), "
+    "psutil.virtual_memory(), psutil.disk_usage('/'), psutil.process_iter([\"pid\", \"name\"]) "
+    "capped to the first 10, etc.) -- never hardcode or fake a value."
+)
+
+NO_AUTH_API_INSTRUCTION = (
+    "For any web-search tool -- it must do a REAL search using the 'ddgs' package (already "
+    "installed, no API key/credentials needed) -- 'from ddgs import DDGS' then "
+    "'results = list(DDGS().text(query, max_results=3))'. Each result is a DICT, not an object -- "
+    "access fields with 'result[\"title\"]' and 'result[\"body\"]', NEVER 'result.title' or "
+    "'result.body' (attribute access on a dict raises AttributeError). A correct return line: "
+    "'\"\\n\".join(f\"{r[\\'title\\']}: {r[\\'body\\']}\" for r in results)'. Never fake/stub a "
+    "result -- that has been observed before to make the agent's final answer hallucinate "
+    "stale/wrong info. Do NOT use the older 'duckduckgo_search' package -- deprecated, returns "
+    "an empty list."
+)
+
+_TOOL_TYPE_INSTRUCTIONS = {
+    "local_system_call": LOCAL_SYSTEM_CALL_INSTRUCTION,
+    "no_auth_api": NO_AUTH_API_INSTRUCTION,
+}
+
+
+def ask_local_model_for_tools_code(
+    task_description: str, tool_types: set, error_context: str = "", log=print
+) -> str:
+    system_instruction = _BASE_INSTRUCTION + "\n\n" + _STRUCTURE_INSTRUCTION
+    for tool_type in sorted(tool_types):
+        if tool_type in _TOOL_TYPE_INSTRUCTIONS:
+            system_instruction += "\n\n" + _TOOL_TYPE_INSTRUCTIONS[tool_type]
+
+    if error_context:
+        system_instruction += f"\n\nCRITICAL: Your previous version of {TOOLS_FILENAME} had this problem. Completely fix it:\n{error_context}"
+
+    return _ask(system_instruction, f"{task_description}\n\nWrite {TOOLS_FILENAME}.", log)
+
+
+# =====================================================================
+# GENERATE -- ROUND 2: main.py (the agent loop). Grounded in the actual
+# agent_tools.py just generated -- shown as real code, not re-described --
+# so this round never redefines the tools, only imports and uses them.
+# =====================================================================
+def ask_local_model_for_agent_code(tools_code: str, error_context: str = "", log=print) -> str:
+    system_instruction = (
+        _BASE_INSTRUCTION + "\n\n"
+        f"This script will be run non-interactively -- never call 'input()'. Write {AGENT_FILENAME}, "
+        f"which imports from the ALREADY-EXISTING {TOOLS_FILENAME} shown below -- do not "
+        "redefine TOOLS, TOOL_REGISTRY, or any tool function; only import and use them:\n"
+        f"'from {TOOLS_FILENAME[:-3]} import TOOLS, TOOL_REGISTRY'\n\n"
+        "Import the 'ollama' package with plain 'import ollama' -- never 'from ollama import "
+        "ollama', which is not a valid import (ollama does not export a name called 'ollama' "
+        "from itself) and has been observed before as a repeated ImportError.\n\n"
+        "Define ask_agent(question, tools, tool_registry) -- tools and tool_registry are "
+        "PARAMETERS, not read from module-level globals inside the function -- with this exact "
+        "body shape:\n\n"
+        "def ask_agent(question, tools, tool_registry):\n"
+        "    messages = [{'role': 'user', 'content': question}]\n"
+        f"    first = ollama.chat(model='{LOCAL_MODEL}', messages=messages, tools=tools)\n"
+        "    reply = first['message']\n"
+        "    tool_calls = reply.get('tool_calls')\n"
+        "    if not tool_calls:\n"
+        "        return reply['content']\n"
+        "    messages.append(reply)\n"
+        "    for call in tool_calls:\n"
+        "        name = call['function']['name']\n"
+        "        args = call['function']['arguments']\n"
+        "        result = tool_registry[name](**args)\n"
+        "        messages.append({'role': 'tool', 'content': str(result), 'name': name})\n"
+        f"    second = ollama.chat(model='{LOCAL_MODEL}', messages=messages, tools=tools)\n"
+        "    return second['message']['content']\n\n"
+        "The LLM itself must decide which tool(s) to invoke via 'tool_calls' above -- never "
+        "keyword-match the question yourself in plain Python to call a tool function directly; "
+        "that defeats the point of the task.\n\n"
+        "Under 'if __name__ == \"__main__\":', call ask_agent(question, TOOLS, TOOL_REGISTRY) "
+        "with at least four different example questions, chosen so each one should naturally "
+        "route to a different one of the four tools -- one question that happens to need every "
+        "tool proves nothing about whether the model, rather than your code, made the choice."
+    )
+
+    if error_context:
+        system_instruction += f"\n\nCRITICAL: Your previous version of {AGENT_FILENAME} had this problem. Completely fix it:\n{error_context}"
+
+    user_content = (
+        f"The following {TOOLS_FILENAME} already exists and is correct -- import from it, do "
+        f"not redefine anything in it:\n\n```python\n{tools_code}\n```"
+    )
+    return _ask(system_instruction, user_content, log)
 
 
 # =====================================================================
@@ -228,18 +349,18 @@ def static_check(path: str) -> tuple[bool, str]:
     issues = []
     seen = set()
     for node in ast.walk(tree):
-        base_name = None
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and isinstance(node.value.ctx, ast.Load):
-            base_name = node.value.id
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and isinstance(node.func.ctx, ast.Load):
-            base_name = node.func.id
-
-        if base_name is not None and base_name not in defined and base_name not in seen:
-            seen.add(base_name)
-            issues.append(
-                f"'{base_name}' is used but never imported or defined anywhere in "
-                f"{os.path.basename(path)}."
-            )
+        # Every bare name LOAD, regardless of what it's used for -- X.attr(...), X(...),
+        # X[...], or just X on its own. A narrower check that only looked at Attribute/Call
+        # patterns missed TOOL_REGISTRY[name](...) (a Subscript), which is exactly how this
+        # generated code's own dispatch pattern accesses it -- so this must be general, not
+        # pattern-specific, or the one undefined name that matters most here slips through.
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id not in defined:
+            if node.id not in seen:
+                seen.add(node.id)
+                issues.append(
+                    f"'{node.id}' is used but never imported or defined anywhere in "
+                    f"{os.path.basename(path)}."
+                )
 
     if issues:
         return False, "\n".join(issues)
@@ -273,11 +394,20 @@ if __name__ == "__main__":
     print(f"Model: {LOCAL_MODEL}")
     print("====================================================")
 
+    task_description = define_task()
+    tool_types = classify_tool_types(task_description)
+    print(f"Tool types identified: {sorted(tool_types)}\n")
+
     max_attempts = 5
-    error_contexts = []  # every past attempt's traceback, not just the most recent -- a retry
-    # loop that only sees the last error can fix that bug while silently regressing on an
-    # earlier one it can no longer see (observed: attempt 3 re-introduced attempt 1's exact
-    # schema bug after attempt 2's traceback, about a different bug, pushed it out of context).
+    tools_error_contexts = []
+    agent_error_contexts = []
+    # Every past attempt's error, not just the most recent -- a retry loop that only sees the
+    # last error can fix that bug while silently regressing on an earlier one it can no longer
+    # see (observed: attempt 3 re-introduced attempt 1's exact schema bug after attempt 2's
+    # error, about a different bug, pushed it out of context).
+
+    tools_path = None
+    tools_code = None
     success = False
 
     for attempt in range(1, max_attempts + 1):
@@ -292,11 +422,48 @@ if __name__ == "__main__":
 
         log(f"\n--- attempt {attempt}/{max_attempts} ---")
 
-        combined_error_context = "\n\n---\n\n".join(
-            f"Attempt {i + 1} failed with:\n{err}" for i, err in enumerate(error_contexts)
+        # ROUND 1 (agent_tools.py) -- only regenerated while it hasn't yet passed static
+        # check. Once it passes, it's cached and reused across remaining attempts, same as
+        # code_harness.py's source_files caching -- a round-2-only failure shouldn't burn a
+        # fresh round-1 generation too.
+        if tools_path is None:
+            combined_tools_errors = "\n\n---\n\n".join(
+                f"Attempt {i + 1}:\n{err}" for i, err in enumerate(tools_error_contexts)
+            )
+            raw_tools_output = ask_local_model_for_tools_code(
+                task_description, tool_types, error_context=combined_tools_errors, log=log
+            )
+            candidate_tools_path = parse_and_write_file(raw_tools_output, attempt_dir, filename=TOOLS_FILENAME)
+
+            with open(candidate_tools_path) as f:
+                candidate_tools_code = f.read()
+            log(f"\n--- {TOOLS_FILENAME} ---\n{candidate_tools_code}")
+
+            tools_check_passed, tools_check_detail = static_check(candidate_tools_path)
+            if not tools_check_passed:
+                log(f"\n{TOOLS_FILENAME} STATIC CHECK FAILED:\n{tools_check_detail}")
+                tools_error_contexts.append(tools_check_detail)
+                continue
+
+            log(f"\n{TOOLS_FILENAME} STATIC CHECK PASSED.")
+            tools_path, tools_code = candidate_tools_path, candidate_tools_code
+        else:
+            # Reuse the already-passing agent_tools.py in this attempt's own dir too, so
+            # EXECUTE later finds both files side by side regardless of which attempt each
+            # came from.
+            reused_path = os.path.join(attempt_dir, TOOLS_FILENAME)
+            shutil.copy(tools_path, reused_path)
+            tools_path = reused_path
+            log(f"\nReusing already-passing {TOOLS_FILENAME} from an earlier attempt.")
+
+        # ROUND 2 (main.py) -- grounded in the real, already-checked agent_tools.py content.
+        combined_agent_errors = "\n\n---\n\n".join(
+            f"Attempt {i + 1}:\n{err}" for i, err in enumerate(agent_error_contexts)
         )
-        raw_output = ask_local_model_for_code(DEFAULT_TASK, error_context=combined_error_context, log=log)
-        path = parse_and_write_file(raw_output, attempt_dir, filename="main.py")
+        raw_agent_output = ask_local_model_for_agent_code(
+            tools_code, error_context=combined_agent_errors, log=log
+        )
+        path = parse_and_write_file(raw_agent_output, attempt_dir, filename=AGENT_FILENAME)
 
         with open(path) as f:
             log(f"\n--- {os.path.basename(path)} ---\n{f.read()}")
@@ -304,12 +471,12 @@ if __name__ == "__main__":
         check_passed, check_detail = static_check(path)
 
         if check_passed:
-            log(f"\nSTATIC CHECK PASSED on attempt {attempt} (kept in {attempt_dir}/)")
+            log(f"\n{AGENT_FILENAME} STATIC CHECK PASSED on attempt {attempt} (kept in {attempt_dir}/)")
             success = True
             break
         else:
-            log(f"\nSTATIC CHECK FAILED:\n{check_detail}")
-            error_contexts.append(check_detail)
+            log(f"\n{AGENT_FILENAME} STATIC CHECK FAILED:\n{check_detail}")
+            agent_error_contexts.append(check_detail)
 
     if not success:
         print(f"\nFAILED: no attempt passed the static check within {max_attempts} tries.")
