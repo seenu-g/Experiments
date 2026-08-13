@@ -314,7 +314,7 @@ def check_resolve_issues(py_paths: list, generated_non_py_filenames: set | None 
     instead of discovering them one at a time across multiple attempts.
 
     generated_non_py_filenames: basenames of every non-.py file this attempt
-    actually generated (e.g. {'db_config.ini'}). Passing None skips
+    actually generated (e.g. {'app_config.ini'}). Passing None skips
     check_missing_config_file_references entirely -- opt-in so existing
     callers that only care about the .py-to-.py checks are unaffected."""
     issues = (

@@ -136,6 +136,52 @@ def eval_empty_and_mysql_tightening():
         return ok
 
 
+def eval_aws_credential_tightening():
+    """Same gap as MySQL's user/password, for AWS: ec2_manager.py's boto3.client() call
+    never passed aws_access_key_id/aws_secret_access_key at all, and even if it had, a
+    fake-but-plausible value like 'AKIAIOSFODNN7EXAMPLE' wouldn't match any placeholder
+    marker. There's no point letting EXECUTE run against real AWS with a credential
+    nobody actually supplied, so aws_access_key_id/aws_secret_access_key are now flagged
+    unconditionally for AWS tasks, same as user/password are for MySQL."""
+    with tempfile.TemporaryDirectory() as tmp:
+        aws_ini_path = os.path.join(tmp, "app_config.ini")
+        parser = configparser.ConfigParser()
+        parser["DEFAULT"] = {
+            "region": "us-east-1",
+            # Plausible-looking but fake, deliberately avoiding any _PLACEHOLDER_MARKERS
+            # word (e.g. AWS's own well-known "AKIAIOSFODNN7EXAMPLE" contains "EXAMPLE",
+            # which would trigger the generic marker check regardless of this test's
+            # AWS-specific unconditional check -- same "abc123" logic as the MySQL case.
+            "aws_access_key_id": "AKIA1234567890ABCDEF",
+            "aws_secret_access_key": "abcDEFghijKLMNOPqrstUVWXYZ0123456789ABCD",
+        }
+        with open(aws_ini_path, "w") as f:
+            parser.write(f)
+
+        ok = True
+
+        not_aws_flagged = find_placeholder_config_values([aws_ini_path])
+        ok &= check(
+            "plausible-looking AWS credentials NOT flagged when external_system is unset",
+            not_aws_flagged == {},
+            not_aws_flagged,
+        )
+
+        aws_flagged = find_placeholder_config_values([aws_ini_path], external_system="AWS")
+        flagged_keys = {key for _, key, _ in aws_flagged.get(aws_ini_path, [])}
+        ok &= check(
+            "same credentials ARE flagged when external_system is AWS (unconditional check)",
+            {"aws_access_key_id", "aws_secret_access_key"} <= flagged_keys,
+            flagged_keys,
+        )
+        ok &= check(
+            "region isn't swept up by the AWS credential tightening",
+            "region" not in flagged_keys,
+            flagged_keys,
+        )
+        return ok
+
+
 def eval_find_placeholder_credentials_in_py():
     """Regression check for the 2026-08-12 20260812_212915 run: the model wrote
     credentials into config.py as a Python dict instead of a .ini file, and VALIDATE
@@ -233,6 +279,7 @@ if __name__ == "__main__":
         eval_find_missing_libraries(),
         eval_find_placeholder_config_values(),
         eval_empty_and_mysql_tightening(),
+        eval_aws_credential_tightening(),
         eval_find_placeholder_credentials_in_py(),
         eval_input_with_timeout_raises_on_no_response(),
     ]

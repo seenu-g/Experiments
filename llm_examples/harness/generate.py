@@ -1,5 +1,10 @@
 """GENERATE stage: ask the model for code and parse its reply into file contents.
 
+Two ordered calls per attempt -- source code first, then test code grounded in
+the actual saved source content -- so the test-writing call is never guessing
+at what the source code looks like. See build_source_system_instruction() and
+build_test_system_instruction() below.
+
 Parsing is decoupled from writing -- this module never touches disk. SAVE owns
 that, so every attempt (pass or fail) can be persisted under a versioned name.
 """
@@ -38,25 +43,33 @@ def _strip_fence(block: str) -> str:
 
 
 CONFIG_FORMAT_INSTRUCTION = (
-    "Any config values (credentials, connection settings, etc.) must be stored in an INI file "
-    "(e.g. db_config.ini), parsed via configparser -- never a Python dict, .env, or .json file. "
-    "This keeps config storage consistent and in one predictable format across tasks. If any file "
-    "calls configparser's .read('db_config.ini') (or whatever you name it), that exact .ini file "
-    "MUST itself be one of the files you output, with its own '# === FILE: db_config.ini ===' "
-    "header and fenced block -- referencing a config file without actually outputting it is a "
-    "bug: configparser.read() does not raise an error for a missing file, it silently does "
-    "nothing, so the code only fails later with a confusing KeyError when a key is looked up."
+    "Any config values (credentials, connection settings, etc.) must be stored in ONE INI file "
+    "(e.g. app_config.ini) shared by whatever external systems the task involves -- AWS "
+    "credentials/region and a database's credentials both belong in that same file if a task "
+    "needs both, never split across separate config files. Parse it via configparser -- never a "
+    "Python dict, .env, or .json file. This keeps config storage consistent and in one "
+    "predictable format across tasks. If any file calls configparser's .read('app_config.ini') "
+    "(or whatever you name it), that exact .ini file MUST itself be one of the files you output, "
+    "with its own '# === FILE: app_config.ini ===' header and fenced block -- referencing a "
+    "config file without actually outputting it is a bug: configparser.read() does not raise an "
+    "error for a missing file, it silently does nothing, so the code only fails later with a "
+    "confusing KeyError when a key is looked up."
 )
 
 AWS_INSTRUCTION = (
     "If the task involves AWS services via boto3, write production code with plain boto3 clients "
-    "(no hardcoded endpoint_url). Store the AWS region in the same config INI file as the "
-    "credentials (e.g. 'region = us-east-1' in the same section), and every "
-    "boto3.client(...)/boto3.resource(...) call must pass region_name=<that config value>, read from "
-    "the config -- never a region hardcoded directly in the boto3 call itself. Do not rely on a "
-    "default region being configured in the environment: there is no ~/.aws/config or "
-    "AWS_DEFAULT_REGION set here, so boto3 raises NoRegionError before a call even reaches AWS (or "
-    "moto, under test) if the region is omitted. " + CONFIG_FORMAT_INSTRUCTION
+    "(no hardcoded endpoint_url). Store the AWS region AND credentials in the same config INI "
+    "file, under keys named exactly 'region', 'aws_access_key_id', and 'aws_secret_access_key' "
+    "(e.g. 'region = us-east-1', 'aws_access_key_id = your_access_key', 'aws_secret_access_key = "
+    "your_secret_key' in the same section) -- the actual values are placeholders a human fills in "
+    "later, but the KEYS must exist. Every boto3.client(...)/boto3.resource(...) call must pass "
+    "all three explicitly -- region_name=<config value>, aws_access_key_id=<config value>, "
+    "aws_secret_access_key=<config value> -- read from the config, never hardcoded directly in "
+    "the boto3 call itself and never omitted. Do not rely on any of these being available some "
+    "other way (environment variables, ~/.aws/config, an IAM role): there is no default region or "
+    "credentials configured in this environment, so boto3 raises NoRegionError/NoCredentialsError "
+    "before a call even reaches AWS (or moto, under test) if any of the three is omitted. "
+    + CONFIG_FORMAT_INSTRUCTION
 )
 
 AWS_TEST_INSTRUCTION = (
@@ -98,56 +111,58 @@ MYSQL_TEST_INSTRUCTION = (
 )
 
 
-def build_system_instruction(
-    error_context: str = "", external_system: str = "", needs_tests: bool = True
-) -> str:
-    system_instruction = (
-        "You are an expert Python software engineer. Your task is to output ONLY valid, "
-        "executable Python code, with no conversational preamble, explanations, or commentary. "
-        "Every 'import' statement required by any function, class, or standard-library call you use "
-        "must be included at the top of its file. Never reference a module or name without importing it first.\n\n"
-        "This script will be run non-interactively with no terminal attached. Never call 'input()' "
-        "or otherwise wait on interactive/stdin input. Demonstrate the code with hardcoded example "
-        "arguments under 'if __name__ == \"__main__\":'.\n\n"
-        "If the task can be done in a single file, output exactly one ```python ... ``` block.\n\n"
-        "If the task explicitly requires multiple files (e.g. one module imported by another), output "
-        "one ```python ... ``` block per file, and immediately BEFORE each block put a line in exactly "
-        "this form:\n"
-        "# === FILE: <filename.py> ===\n"
-        "All files you output will be saved together in the same folder, so a plain "
-        "'import <filename_without_.py>' between them will resolve correctly. Put the file that should "
-        "be run directly (the one with 'if __name__ == \"__main__\":') LAST, and mark the line right "
-        "after its FILE header with:\n"
-        "# === ENTRYPOINT ===\n"
-        "Do not use this multi-file format unless the task genuinely requires more than one file.\n\n"
-        "Expose one function per distinct operation the task describes (e.g. create_x(...), "
-        "delete_x(...), get_x(...)), and call those functions directly from tests and from the "
-        "__main__ example. Do not invent a single dispatcher function that parses a command string "
-        "(e.g. handle_command('ec2 my-instance create')) to route between operations unless the "
-        "task explicitly asks for a CLI or command-line interface -- an unrequested parsing layer "
-        "is code the tests then also have to exercise indirectly, for no benefit.\n\n"
-        + (
-            "Include a test file that exercises the code. The test file must actually RUN its own "
-            "tests when executed directly and exit with a non-zero code if any test fails -- a test "
-            "file that only defines test functions/classes but never invokes them will exit 0 having "
-            "tested nothing, which is worse than no test file at all. If it uses unittest.TestCase, "
-            "put 'unittest.main()' under 'if __name__ == \"__main__\":'. If it uses bare test_*() "
-            "functions instead (no unittest), call every one of them under 'if __name__ == "
-            '"__main__":\' so a failing assertion raises and the process exits non-zero.'
-            if needs_tests
-            else "Do not write a test file -- only the production code the user asked for."
-        )
-    )
+_BASE_INSTRUCTION = (
+    "You are an expert Python software engineer. Your task is to output ONLY valid, "
+    "executable Python code, with no conversational preamble, explanations, or commentary. "
+    "Every 'import' statement required by any function, class, or standard-library call you use "
+    "must be included at the top of its file. Never reference a module or name without importing it first.\n\n"
+    "This script will be run non-interactively with no terminal attached. Never call 'input()' "
+    "or otherwise wait on interactive/stdin input. Demonstrate the code with hardcoded example "
+    "arguments under 'if __name__ == \"__main__\":'.\n\n"
+    "If the task can be done in a single file, output exactly one ```python ... ``` block.\n\n"
+    "If the task explicitly requires multiple files (e.g. one module imported by another), output "
+    "one ```python ... ``` block per file, and immediately BEFORE each block put a line in exactly "
+    "this form:\n"
+    "# === FILE: <filename.py> ===\n"
+    "All files you output will be saved together in the same folder, so a plain "
+    "'import <filename_without_.py>' between them will resolve correctly. Put the file that should "
+    "be run directly (the one with 'if __name__ == \"__main__\":') LAST, and mark the line right "
+    "after its FILE header with:\n"
+    "# === ENTRYPOINT ===\n"
+    "Do not use this multi-file format unless the task genuinely requires more than one file."
+)
+
+_SOURCE_ONLY_INSTRUCTION = (
+    "Write only production code here -- do not write any test file, test function, or test class; "
+    "a separate call handles tests. Expose one function per distinct operation the task describes "
+    "(e.g. create_x(...), delete_x(...), get_x(...)), and call those functions directly from the "
+    "__main__ example. Do not invent a single dispatcher function that parses a command string "
+    "(e.g. handle_command('ec2 my-instance create')) to route between operations unless the task "
+    "explicitly asks for a CLI or command-line interface -- an unrequested parsing layer is code a "
+    "later test round then also has to exercise indirectly, for no benefit."
+)
+
+_TEST_ONLY_INSTRUCTION = (
+    "Write only the test file(s) here. The production code shown to you below in the user message "
+    "already exists, has already passed lint/resolve/compile checks, and is correct -- import from "
+    "it, do not redefine, rewrite, or duplicate any function, class, or file already shown to you. "
+    "The test file must actually RUN its own tests when executed directly and exit with a non-zero "
+    "code if any test fails -- a test file that only defines test functions/classes but never "
+    "invokes them will exit 0 having tested nothing, which is worse than no test file at all. If it "
+    "uses unittest.TestCase, put 'unittest.main()' under 'if __name__ == \"__main__\":'. If it uses "
+    "bare test_*() functions instead (no unittest), call every one of them under 'if __name__ == "
+    '"__main__":\' so a failing assertion raises and the process exits non-zero.'
+)
+
+
+def build_source_system_instruction(error_context: str = "", external_system: str = "") -> str:
+    system_instruction = _BASE_INSTRUCTION + "\n\n" + _SOURCE_ONLY_INSTRUCTION
 
     if "aws" in external_system.lower():
         system_instruction += "\n\n" + AWS_INSTRUCTION
-        if needs_tests:
-            system_instruction += "\n\n" + AWS_TEST_INSTRUCTION
 
     if "mysql" in external_system.lower():
         system_instruction += "\n\n" + MYSQL_INSTRUCTION
-        if needs_tests:
-            system_instruction += "\n\n" + MYSQL_TEST_INSTRUCTION
 
     if error_context:
         system_instruction += f"\n\nCRITICAL: Your previous code failed. Completely fix this:\n{error_context}"
@@ -155,17 +170,75 @@ def build_system_instruction(
     return system_instruction
 
 
-def ask_local_model_for_code(
-    spec: str, error_context: str = "", external_system: str = "", needs_tests: bool = True
-) -> str:
-    system_instruction = build_system_instruction(error_context, external_system, needs_tests)
+def build_test_system_instruction(error_context: str = "", external_system: str = "") -> str:
+    system_instruction = _BASE_INSTRUCTION + "\n\n" + _TEST_ONLY_INSTRUCTION
 
-    print(f"Querying {LOCAL_MODEL}...")
+    if "aws" in external_system.lower():
+        system_instruction += "\n\n" + AWS_TEST_INSTRUCTION
+
+    if "mysql" in external_system.lower():
+        system_instruction += "\n\n" + MYSQL_TEST_INSTRUCTION
+
+    if error_context:
+        system_instruction += f"\n\nCRITICAL: Your previous test code failed. Completely fix this:\n{error_context}"
+
+    return system_instruction
+
+
+def _format_source_code_context(source_files: list) -> str:
+    """Render the actual saved source files as context for the test-writing call,
+    so it's grounded in what really exists instead of guessing at it."""
+    blocks = []
+    for filename, code in source_files:
+        blocks.append(
+            f"# === FILE: {filename} ===\n"
+            f"# This file already exists and is correct -- import from it, do not rewrite it.\n"
+            f"{code}"
+        )
+    return "\n\n".join(blocks)
+
+
+def ask_local_model_for_source_code(
+    source_spec: str, error_context: str = "", external_system: str = ""
+) -> str:
+    """`source_spec` is expected to already have any test-writing content stripped out by the
+    caller (see define.strip_test_content) -- this round's user message should describe
+    nothing about tests at all, not even a step to ignore."""
+    system_instruction = build_source_system_instruction(error_context, external_system)
+
+    print(f"Querying {LOCAL_MODEL} (source)...")
     response = ollama.chat(
         model=LOCAL_MODEL,
         messages=[
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": spec},
+            {"role": "user", "content": source_spec},
+        ],
+        options={"temperature": 0.1},
+    )
+    return response["message"]["content"]
+
+
+def ask_local_model_for_test_code(
+    test_spec: str, source_files: list, error_context: str = "", external_system: str = ""
+) -> str:
+    """`test_spec` is expected to be just the spec's test-related content (see
+    define.extract_test_steps), not the full original spec -- this round is grounded in the
+    real source code below, not a repeat of the production Input/Output/Steps it never needs."""
+    system_instruction = build_test_system_instruction(error_context, external_system)
+    user_content = (
+        f"{test_spec}\n\n"
+        "The following production code already exists and has already passed "
+        "lint/resolve/compile -- write test(s) against it exactly as shown, do not redefine "
+        "any of it:\n\n"
+        f"{_format_source_code_context(source_files)}"
+    )
+
+    print(f"Querying {LOCAL_MODEL} (test)...")
+    response = ollama.chat(
+        model=LOCAL_MODEL,
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_content},
         ],
         options={"temperature": 0.1},
     )

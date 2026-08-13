@@ -21,13 +21,17 @@ from define import (
     _apply_needs_tests_override,
     extract_external_system,
     extract_needs_tests,
+    extract_test_steps,
+    strip_test_content,
 )
 from generate import (
     AWS_INSTRUCTION,
     AWS_TEST_INSTRUCTION,
     MYSQL_INSTRUCTION,
     MYSQL_TEST_INSTRUCTION,
-    build_system_instruction,
+    _format_source_code_context,
+    build_source_system_instruction,
+    build_test_system_instruction,
     parse_generated_files,
 )
 
@@ -225,7 +229,7 @@ if __name__ == "__main__":
     return ok
 
 
-def eval_base_instruction_forbids_unrequested_command_dispatcher():
+def eval_source_instruction_forbids_unrequested_command_dispatcher():
     """Regression check for the 2026-08-13 20260813_012157 run: the spec's Input
     line said 'User commands specifying the action...' (DEFINE's own paraphrase --
     the user never asked for a CLI), and GENERATE ran with it, inventing a
@@ -234,21 +238,21 @@ def eval_base_instruction_forbids_unrequested_command_dispatcher():
     handle_command(...) without importing it, which RESOLVE correctly caught, but
     the real waste was GENERATE inventing an unrequested interface layer at all."""
     ok = True
-    base = build_system_instruction()
+    source = build_source_system_instruction()
     ok &= check(
-        "base instruction requires one function per operation",
-        "one function per" in base.lower(),
-        base,
+        "source instruction requires one function per operation",
+        "one function per" in source.lower(),
+        source,
     )
     ok &= check(
-        "base instruction forbids an unrequested command-string dispatcher",
-        "handle_command" in base and "cli" in base.lower(),
-        base,
+        "source instruction forbids an unrequested command-string dispatcher",
+        "handle_command" in source and "cli" in source.lower(),
+        source,
     )
     return ok
 
 
-def eval_base_instruction_requires_test_file_to_run_its_tests():
+def eval_test_instruction_requires_test_file_to_run_its_tests():
     """Regression check for the 2026-08-13 20260813_012157 run: ec2_manager_test_v2.py
     defined 6 @mock_aws test_*() functions but never called any of them -- no
     unittest.main(), no 'if __name__' block invoking them at all. EXECUTE ran it as
@@ -257,27 +261,21 @@ def eval_base_instruction_requires_test_file_to_run_its_tests():
     actually exercised. The old instruction only said to 'include a test file',
     never that it must actually run its tests and fail non-zero on a failure."""
     ok = True
-    with_tests = build_system_instruction(needs_tests=True)
+    test_instruction = build_test_system_instruction()
     ok &= check(
         "instruction requires the test file to actually run its tests",
-        "tested nothing" in with_tests.lower(),
-        with_tests,
+        "tested nothing" in test_instruction.lower(),
+        test_instruction,
     )
     ok &= check(
         "instruction covers the unittest.TestCase case (unittest.main())",
-        "unittest.main()" in with_tests,
-        with_tests,
+        "unittest.main()" in test_instruction,
+        test_instruction,
     )
     ok &= check(
         "instruction covers the bare test_*() function case too",
-        "test_*()" in with_tests,
-        with_tests,
-    )
-    without_tests = build_system_instruction(needs_tests=False)
-    ok &= check(
-        "instruction not present when needs_tests=False",
-        "tested nothing" not in without_tests.lower(),
-        without_tests,
+        "test_*()" in test_instruction,
+        test_instruction,
     )
     return ok
 
@@ -286,31 +284,31 @@ def eval_external_system_gates_aws_instruction():
     ok = True
     ok &= check(
         "AWS block included when external_system=AWS",
-        AWS_INSTRUCTION in build_system_instruction(external_system="AWS"),
+        AWS_INSTRUCTION in build_source_system_instruction(external_system="AWS"),
     )
     ok &= check(
         "AWS block excluded when external_system=MySQL",
-        AWS_INSTRUCTION not in build_system_instruction(external_system="MySQL"),
+        AWS_INSTRUCTION not in build_source_system_instruction(external_system="MySQL"),
     )
     ok &= check(
         "AWS block excluded when external_system=None",
-        AWS_INSTRUCTION not in build_system_instruction(external_system="None"),
+        AWS_INSTRUCTION not in build_source_system_instruction(external_system="None"),
     )
     ok &= check(
         "AWS block excluded when external_system=''",
-        AWS_INSTRUCTION not in build_system_instruction(external_system=""),
+        AWS_INSTRUCTION not in build_source_system_instruction(external_system=""),
     )
     ok &= check(
         "MySQL block included when external_system=MySQL Database",
-        MYSQL_INSTRUCTION in build_system_instruction(external_system="MySQL Database"),
+        MYSQL_INSTRUCTION in build_source_system_instruction(external_system="MySQL Database"),
     )
     ok &= check(
         "MySQL block excluded when external_system=AWS",
-        MYSQL_INSTRUCTION not in build_system_instruction(external_system="AWS"),
+        MYSQL_INSTRUCTION not in build_source_system_instruction(external_system="AWS"),
     )
     ok &= check(
         "AWS block excluded when external_system=MySQL Database",
-        AWS_INSTRUCTION not in build_system_instruction(external_system="MySQL Database"),
+        AWS_INSTRUCTION not in build_source_system_instruction(external_system="MySQL Database"),
     )
     return ok
 
@@ -324,46 +322,71 @@ def eval_config_format_instruction_requires_ini_file_to_be_output():
     file but never said the model must actually output it as one of its files --
     this applies to both AWS and MySQL since both compose CONFIG_FORMAT_INSTRUCTION."""
     ok = True
-    aws = build_system_instruction(external_system="AWS")
+    aws = build_source_system_instruction(external_system="AWS")
     ok &= check(
         "AWS prompt requires the .ini file to be one of the output FILE blocks",
-        "FILE: db_config.ini" in aws and "MUST itself be one of the files you output" in aws,
+        "FILE: app_config.ini" in aws and "MUST itself be one of the files you output" in aws,
         aws,
     )
-    mysql = build_system_instruction(external_system="MySQL Database")
+    mysql = build_source_system_instruction(external_system="MySQL Database")
     ok &= check(
         "MySQL prompt requires the .ini file to be one of the output FILE blocks too",
         "MUST itself be one of the files you output" in mysql,
         mysql,
     )
+    ok &= check(
+        "instruction requires ONE shared config file across AWS and DB credentials, not separate files",
+        "ONE INI file" in aws and "never split across separate config files" in aws,
+        aws,
+    )
     return ok
 
 
-def eval_aws_instruction_requires_region_name():
-    """Regression check for the 2026-08-13 20260813_003655 run: ec2_manager.py's
-    boto3.client('ec2') calls never passed region_name, and this machine has no
-    ~/.aws/config or AWS_DEFAULT_REGION set -- botocore.exceptions.NoRegionError
-    fired before the call even reached moto's mocking. AWS_TEST_INSTRUCTION already
-    told the model to use region_name in the TEST file's own client creation, but
-    AWS_INSTRUCTION (production code) said nothing about region at all, even
-    though production code needing tests=False still creates its own clients."""
+def eval_aws_instruction_requires_region_and_credentials():
+    """Regression check for the 2026-08-13 20260813_003655 run and a follow-up gap found in
+    the same instruction: ec2_manager.py's boto3.client('ec2') calls never passed region_name,
+    and this machine has no ~/.aws/config or AWS_DEFAULT_REGION set -- botocore.exceptions.
+    NoRegionError fired before the call even reached moto's mocking. AWS_TEST_INSTRUCTION
+    already told the model to use region_name in the TEST file's own client creation, but
+    AWS_INSTRUCTION (source code) said nothing about region -- or credentials -- at all.
+
+    The credentials half: even once region_name was required, boto3.client('ec2',
+    region_name=...) still never passed aws_access_key_id/aws_secret_access_key, so the
+    'config file with credentials' the task asked for ended up only ever holding a region.
+    Harmless under moto (which injects dummy credentials regardless), but the generated code
+    would never authenticate against real AWS. Fixed the same way MYSQL_INSTRUCTION already
+    requires 'user'/'password' by exact key name. Both region and credentials are the same
+    underlying config-completeness requirement, so they're checked together here.
+
+    The source builder no longer takes a needs_tests param (a needs_tests=False task's whole
+    attempt is source-round-only), so there's only one case to check now."""
     ok = True
-    prod_only = build_system_instruction(external_system="AWS", needs_tests=False)
+    source = build_source_system_instruction(external_system="AWS")
+
     ok &= check(
-        "production-only AWS prompt requires region_name on every client",
-        "region_name" in prod_only and "NoRegionError" in prod_only,
-        prod_only,
+        "source AWS prompt requires region_name on every client",
+        "region_name" in source and "NoRegionError" in source,
+        source,
     )
     ok &= check(
         "region must be read from the config file, not hardcoded in the boto3 call",
-        "region = us-east-1" in prod_only and "config" in prod_only.lower(),
-        prod_only,
+        "region = us-east-1" in source and "config" in source.lower(),
+        source,
     )
-    with_tests = build_system_instruction(external_system="AWS", needs_tests=True)
     ok &= check(
-        "AWS+tests prompt still requires region_name in production code too",
-        "region_name" in with_tests,
-        with_tests,
+        "instruction requires exact credential key names in the config file",
+        "aws_access_key_id" in source and "aws_secret_access_key" in source,
+        source,
+    )
+    ok &= check(
+        "instruction requires every boto3 call to pass all three explicitly",
+        "aws_access_key_id=<config value>" in source and "aws_secret_access_key=<config value>" in source,
+        source,
+    )
+    ok &= check(
+        "instruction warns about NoCredentialsError, not just NoRegionError",
+        "NoCredentialsError" in source,
+        source,
     )
     return ok
 
@@ -376,16 +399,16 @@ def eval_aws_test_instruction_forbids_deprecated_moto_api():
     correctly; it never said what NOT to do, so the model wasn't warned off
     either wrong pattern."""
     ok = True
-    aws_with_tests = build_system_instruction(external_system="AWS", needs_tests=True)
+    test_instruction = build_test_system_instruction(external_system="AWS")
     ok &= check(
         "instruction explicitly forbids @mock_aws(...) with an argument",
-        "mock_aws('s3')" in aws_with_tests or "no arguments" in aws_with_tests.lower(),
-        aws_with_tests,
+        "mock_aws('s3')" in test_instruction or "no arguments" in test_instruction.lower(),
+        test_instruction,
     )
     ok &= check(
         "instruction explicitly names the removed per-service decorators",
-        "mock_s3" in aws_with_tests and "mock_ec2" in aws_with_tests,
-        aws_with_tests,
+        "mock_s3" in test_instruction and "mock_ec2" in test_instruction,
+        test_instruction,
     )
     return ok
 
@@ -399,68 +422,97 @@ def eval_aws_test_instruction_requires_self_contained_tests():
     own. AWS_TEST_INSTRUCTION said how to mock AWS but never said tests must be
     self-contained or that a test may only delete what it itself created."""
     ok = True
-    aws_with_tests = build_system_instruction(external_system="AWS", needs_tests=True)
+    test_instruction = build_test_system_instruction(external_system="AWS")
     ok &= check(
         "instruction requires each test to create its own resources",
-        "self-contained" in aws_with_tests.lower(),
-        aws_with_tests,
+        "self-contained" in test_instruction.lower(),
+        test_instruction,
     )
     ok &= check(
         "instruction forbids deleting/terminating resources a test didn't create",
-        "did not create" in aws_with_tests.lower() or "didn't create" in aws_with_tests.lower(),
-        aws_with_tests,
+        "did not create" in test_instruction.lower() or "didn't create" in test_instruction.lower(),
+        test_instruction,
     )
     ok &= check(
         "instruction requires a time-based unique resource name per test",
-        "int(time.time())" in aws_with_tests,
-        aws_with_tests,
+        "int(time.time())" in test_instruction,
+        test_instruction,
     )
     ok &= check(
         "instruction forbids a fixed literal resource name reused across tests",
-        "reused across multiple test methods" in aws_with_tests,
-        aws_with_tests,
+        "reused across multiple test methods" in test_instruction,
+        test_instruction,
     )
     ok &= check(
         "instruction explicitly requires 'import time' when using time.time() for the name",
-        "'import time'" in aws_with_tests,
-        aws_with_tests,
+        "'import time'" in test_instruction,
+        test_instruction,
     )
     return ok
 
 
 def eval_needs_tests_gates_test_instructions():
+    """After the two-round GENERATE split, needs_tests no longer gates prompt
+    CONTENT -- it gates whether round 2 runs at all (see code_harness.py). The
+    source builder never takes AWS_TEST_INSTRUCTION/MYSQL_TEST_INSTRUCTION (no
+    param exists to include them); the test builder always includes them when
+    the external system matches, since round 2 only ever runs when tests are
+    needed in the first place."""
     ok = True
     ok &= check(
-        "MySQL prod instruction present even when needs_tests=False",
-        MYSQL_INSTRUCTION in build_system_instruction(external_system="MySQL", needs_tests=False),
+        "MySQL source instruction present",
+        MYSQL_INSTRUCTION in build_source_system_instruction(external_system="MySQL"),
     )
     ok &= check(
-        "MySQL test instruction excluded when needs_tests=False",
-        MYSQL_TEST_INSTRUCTION not in build_system_instruction(external_system="MySQL", needs_tests=False),
+        "MySQL test instruction never appears in the source builder's output",
+        MYSQL_TEST_INSTRUCTION not in build_source_system_instruction(external_system="MySQL"),
     )
     ok &= check(
-        "MySQL test instruction included when needs_tests=True",
-        MYSQL_TEST_INSTRUCTION in build_system_instruction(external_system="MySQL", needs_tests=True),
+        "MySQL test instruction included in the test builder's output",
+        MYSQL_TEST_INSTRUCTION in build_test_system_instruction(external_system="MySQL"),
     )
     ok &= check(
-        "AWS prod instruction present even when needs_tests=False",
-        AWS_INSTRUCTION in build_system_instruction(external_system="AWS", needs_tests=False),
+        "AWS source instruction present",
+        AWS_INSTRUCTION in build_source_system_instruction(external_system="AWS"),
     )
     ok &= check(
-        "AWS test instruction (moto) excluded when needs_tests=False",
-        AWS_TEST_INSTRUCTION not in build_system_instruction(external_system="AWS", needs_tests=False),
+        "AWS test instruction (moto) never appears in the source builder's output",
+        AWS_TEST_INSTRUCTION not in build_source_system_instruction(external_system="AWS"),
     )
     ok &= check(
-        "AWS test instruction (moto) included when needs_tests=True",
-        AWS_TEST_INSTRUCTION in build_system_instruction(external_system="AWS", needs_tests=True),
+        "AWS test instruction (moto) included in the test builder's output",
+        AWS_TEST_INSTRUCTION in build_test_system_instruction(external_system="AWS"),
     )
     ok &= check(
-        "explicit 'do not write a test file' instruction present when needs_tests=False",
-        "Do not write a test file" in build_system_instruction(needs_tests=False),
+        "source builder explicitly forbids writing a test file",
+        "do not write any test file" in build_source_system_instruction().lower(),
     )
     ok &= check(
-        "explicit 'include a test file' instruction present when needs_tests=True",
-        "Include a test file" in build_system_instruction(needs_tests=True),
+        "test builder explicitly says to write only the test file(s)",
+        "write only the test file" in build_test_system_instruction().lower(),
+    )
+    return ok
+
+
+def eval_format_source_code_context():
+    """The test-writing call's user message must ground it in the actual saved
+    source files, not a paraphrase -- given a files list, the rendered block
+    must contain each filename's own FILE header and its exact code content."""
+    source_files = [
+        ("ec2_manager.py", "def create_ec2_instance(name):\n    pass\n"),
+        ("db_config.ini", "[DEFAULT]\nregion = us-east-1\n"),
+    ]
+    rendered = _format_source_code_context(source_files)
+    ok = True
+    ok &= check(
+        "rendered block contains each filename's own FILE header",
+        "# === FILE: ec2_manager.py ===" in rendered and "# === FILE: db_config.ini ===" in rendered,
+        rendered,
+    )
+    ok &= check(
+        "rendered block contains each file's exact code content",
+        "def create_ec2_instance(name):" in rendered and "region = us-east-1" in rendered,
+        rendered,
     )
     return ok
 
@@ -533,6 +585,65 @@ def eval_extract_needs_tests():
         "defaults to True (old behavior) when field missing",
         extract_needs_tests("Input: None\nOutput: something\nSteps: do it") is True,
     )
+    return ok
+
+
+def eval_extract_test_steps_and_strip_test_content():
+    """Regression check for the 2026-08-13 20260813_113104 run: the source round wrote a
+    full test file itself (with its own missing 'import mysql.connector' bug) because the
+    spec's Steps section named a test script -- a concrete instruction in the source round's
+    own user message beat its system prompt's abstract 'do not write tests' rule. The fix
+    splits the spec instead of arguing with the model about it: strip_test_content() removes
+    all test content for the source round's prompt; extract_test_steps() pulls just the test
+    content for the test round's prompt. Neither round's input should contain both halves."""
+    spec = (
+        "Input: None\n\n"
+        "Output: Config file with database credentials, a manager script, and a test script.\n\n"
+        "Steps:\n"
+        "1. Create a configuration file named db_config.ini.\n"
+        "2. Write database_manager.py with create/delete functions.\n\n"
+        "Test Steps:\n"
+        "1. Create a test database and user.\n"
+        "2. Verify creation succeeded, then delete both.\n\n"
+        "External System called: MySQL database\n\n"
+        "Tests needed: Yes"
+    )
+
+    ok = True
+
+    test_steps = extract_test_steps(spec)
+    ok &= check(
+        "extract_test_steps pulls only the Test Steps section's content",
+        "test database and user" in test_steps and "Verify creation succeeded" in test_steps,
+        test_steps,
+    )
+    ok &= check(
+        "extract_test_steps doesn't leak the production Steps section",
+        "database_manager.py" not in test_steps,
+        test_steps,
+    )
+    ok &= check(
+        "extract_test_steps defaults to a generic fallback when the field is missing",
+        extract_test_steps("Input: None\nOutput: x\nSteps: do it") != "",
+    )
+
+    source_spec = strip_test_content(spec)
+    ok &= check(
+        "strip_test_content removes the Test Steps section entirely",
+        "Test Steps:" not in source_spec and "test database and user" not in source_spec,
+        source_spec,
+    )
+    ok &= check(
+        "strip_test_content removes the Tests needed line entirely",
+        "Tests needed:" not in source_spec,
+        source_spec,
+    )
+    ok &= check(
+        "strip_test_content keeps the production Steps section intact",
+        "database_manager.py" in source_spec and "External System called: MySQL database" in source_spec,
+        source_spec,
+    )
+
     return ok
 
 
@@ -642,17 +753,19 @@ if __name__ == "__main__":
         eval_single_file_fallback(),
         eval_stray_closing_fence_stripped(),
         eval_duplicate_file_block_deduped(),
-        eval_base_instruction_forbids_unrequested_command_dispatcher(),
-        eval_base_instruction_requires_test_file_to_run_its_tests(),
+        eval_source_instruction_forbids_unrequested_command_dispatcher(),
+        eval_test_instruction_requires_test_file_to_run_its_tests(),
         eval_config_format_instruction_requires_ini_file_to_be_output(),
         eval_external_system_gates_aws_instruction(),
-        eval_aws_instruction_requires_region_name(),
+        eval_aws_instruction_requires_region_and_credentials(),
         eval_aws_test_instruction_forbids_deprecated_moto_api(),
         eval_aws_test_instruction_requires_self_contained_tests(),
         eval_needs_tests_gates_test_instructions(),
+        eval_format_source_code_context(),
         eval_apply_external_system_override(),
         eval_apply_needs_tests_override(),
         eval_extract_external_system(),
         eval_extract_needs_tests(),
+        eval_extract_test_steps_and_strip_test_content(),
     ]
     sys.exit(0 if all(results) else 1)

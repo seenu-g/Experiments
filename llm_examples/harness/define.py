@@ -16,11 +16,16 @@ def restate_task(raw_description: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Restate the user's coding request as a spec using exactly these five "
+                    "Restate the user's coding request as a spec using exactly these six "
                     "labeled sections, plain text, no code, no preamble:\n\n"
                     "Input: <what data/values come in>\n"
                     "Output: <what is produced/returned>\n"
-                    "Steps: <ordered list of the algorithm-level logic>\n"
+                    "Steps: <ordered list of the algorithm-level logic for the production code "
+                    "only -- do NOT include writing tests, test scripts, or test clients here; "
+                    "any such step belongs in Test Steps below instead>\n"
+                    "Test Steps: <ordered list of steps specifically for writing/running "
+                    "automated tests that verify the behavior above -- 'None' if the user didn't "
+                    "ask for tests, verification, or a test client/script>\n"
                     "External System called: <APIs, files, network, database touched -- or 'None'>\n"
                     "Tests needed: <Yes if the user asked for tests, verification, or a test "
                     "client/script; No if they only asked for the production code itself>\n\n"
@@ -134,6 +139,37 @@ def _apply_needs_tests_override(spec: str, raw_description: str, logger) -> str:
     if re.search(r"Tests needed:.*", spec):
         return re.sub(r"Tests needed:.*", new_line, spec, count=1)
     return spec.rstrip() + f"\n{new_line}"
+
+
+_FIELD_LABELS = ("Input:", "Output:", "Steps:", "Test Steps:", "External System called:", "Tests needed:")
+_NEXT_FIELD_LOOKAHEAD = "|".join(re.escape(label) for label in _FIELD_LABELS)
+
+
+def extract_test_steps(spec: str) -> str:
+    """Pull the value of the spec's 'Test Steps:' section (everything up to the next labeled
+    field or end of string). Defaults to a generic fallback if the field is missing, e.g. from
+    a spec that predates this field, or the model omitted it despite instructions."""
+    match = re.search(rf"Test Steps:\s*(.*?)(?=\n\s*(?:{_NEXT_FIELD_LOOKAHEAD})|\Z)", spec, re.DOTALL)
+    text = match.group(1).strip() if match else ""
+    return text or "Write thorough unit tests verifying the production code behaves as described."
+
+
+def strip_test_content(spec: str) -> str:
+    """Remove the 'Test Steps:' section and the 'Tests needed:' line entirely from the spec
+    text handed to the SOURCE round -- it should see nothing about tests at all, not even a
+    field to ignore.
+
+    Regression case: the 2026-08-13 20260813_113104 run, where the source round wrote a full
+    test file itself (with its own missing 'import mysql.connector' bug) because the spec's
+    Steps section named a test script the source round's own system prompt told it not to
+    write -- a concrete instruction sitting in the user message beat an abstract one in the
+    system message. Splitting the spec so the source round's input literally contains no test
+    content removes the contradiction instead of trying to out-argue it."""
+    cleaned = re.sub(
+        rf"\n*Test Steps:.*?(?=\n\s*(?:{_NEXT_FIELD_LOOKAHEAD})|\Z)", "\n", spec, flags=re.DOTALL
+    )
+    cleaned = re.sub(r"\n*Tests needed:.*?(?=\Z)", "", cleaned, flags=re.DOTALL)
+    return cleaned.strip()
 
 
 def define_task(confirm, logger, is_test: bool = False) -> str:

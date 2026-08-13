@@ -30,7 +30,8 @@ _PLACEHOLDER_MARKERS = ("password", "changeme", "your_", "xxx", "example", "<", 
 # keeps this from matching a kwarg/variable reference like `user=admin_username,`
 # -- an unquoted value there is a name lookup, not a literal to fix.
 _PY_CRED_LINE_RE = re.compile(
-    r"^[ \t]*(?P<qkey>['\"]?)(?P<key>user|username|admin_username|password|passwd|pwd|secret|token|api[_-]?key)"
+    r"^[ \t]*(?P<qkey>['\"]?)(?P<key>user|username|admin_username|password|passwd|pwd|secret|token|"
+    r"api[_-]?key|aws_access_key_id|aws_secret_access_key)"
     r"(?P=qkey)\s*[:=]\s*(?P<vquote>['\"])(?P<value>[^'\"\n]*)(?P=vquote)\s*,?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -60,10 +61,16 @@ def find_missing_libraries(py_paths: list) -> list:
 def find_placeholder_config_values(non_py_paths: list, external_system: str = "") -> dict:
     """Return {path: [(section, key, value), ...]} for .ini values that need a human
     to confirm/supply them before EXECUTE: empty values, values that look like a
-    placeholder the model invented, or -- for MySQL tasks -- the 'user'/'password'
-    keys specifically, checked unconditionally since a fake-but-plausible value
-    like 'abc123' won't match any placeholder marker."""
-    always_flag_keys = {"user", "password"} if "mysql" in external_system.lower() else set()
+    placeholder the model invented, or -- for MySQL tasks, 'user'/'password'; for AWS
+    tasks, 'aws_access_key_id'/'aws_secret_access_key' -- checked unconditionally since
+    a fake-but-plausible value like 'abc123' or 'AKIAIOSFODNN7EXAMPLE' won't match any
+    placeholder marker, and there's no point letting EXECUTE run against AWS/a real
+    database with a credential nobody actually supplied."""
+    always_flag_keys = set()
+    if "mysql" in external_system.lower():
+        always_flag_keys |= {"user", "password"}
+    if "aws" in external_system.lower():
+        always_flag_keys |= {"aws_access_key_id", "aws_secret_access_key"}
     findings = {}
     for path in non_py_paths:
         if not path.endswith(".ini"):
@@ -89,7 +96,11 @@ def find_placeholder_credentials_in_py(py_paths: list, external_system: str = ""
     the model sometimes writes credentials into a plain Python config module (e.g.
     `config = {'user': 'your_username', 'password': 'your_password'}`) instead of an
     .ini file, which find_placeholder_config_values never looks at."""
-    always_flag_keys = {"user", "username", "password"} if "mysql" in external_system.lower() else set()
+    always_flag_keys = set()
+    if "mysql" in external_system.lower():
+        always_flag_keys |= {"user", "username", "password"}
+    if "aws" in external_system.lower():
+        always_flag_keys |= {"aws_access_key_id", "aws_secret_access_key"}
     findings = []
     for path in py_paths:
         with open(path) as f:
