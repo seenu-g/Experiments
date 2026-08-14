@@ -4,7 +4,7 @@ import re
 
 import ollama
 
-from config import LOCAL_MODEL
+from config import LOCAL_MODEL, OLLAMA_KEEP_ALIVE
 from input_capture import record_confirmed_prompt
 
 
@@ -45,6 +45,7 @@ def restate_task(raw_description: str) -> str:
             {"role": "user", "content": raw_description},
         ],
         options={"temperature": 0.1},
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
     return response["message"]["content"].strip()
 

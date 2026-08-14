@@ -25,3 +25,5 @@ ai_agent_output/*
 ai_agent_output/*/*/*.py
 ai_agent_output/*/*/*.ini
 ai_agent_output/*/*/run.log
+systems/__pycache__/
+systems/__pycache__/*

@@ -15,7 +15,13 @@ import tempfile
 import time
 
 from timeout_input import InputTimeout, input_with_timeout
-from validate import find_missing_libraries, find_placeholder_config_values, find_placeholder_credentials_in_py
+from validate import (
+    _looks_like_placeholder,
+    _PLACEHOLDER_SENTINEL_RE,
+    find_missing_libraries,
+    find_placeholder_config_values,
+    find_placeholder_credentials_in_py,
+)
 
 
 def check(label, condition, detail=""):
@@ -182,6 +188,50 @@ def eval_aws_credential_tightening():
         return ok
 
 
+def eval_placeholder_sentinel_deterministic_format():
+    """The '<<your_KEY_NAME>>' sentinel (see generate.CONFIG_FORMAT_INSTRUCTION) is a
+    deterministic, system-agnostic placeholder format -- checked explicitly via
+    _looks_like_placeholder rather than relying only on '<' already being in
+    _PLACEHOLDER_MARKERS, so intent stays unambiguous even if that marker list changes."""
+    ok = True
+    ok &= check("exact sentinel form is recognized", _looks_like_placeholder("<<your_password>>"))
+    ok &= check(
+        "sentinel with surrounding whitespace is still recognized",
+        _looks_like_placeholder("  <<your_aws_secret_access_key>>  "),
+    )
+    ok &= check(
+        "sentinel is case-insensitive",
+        _looks_like_placeholder("<<YOUR_API_KEY>>"),
+    )
+    ok &= check(
+        "a real-looking value that ISN'T the sentinel and matches no marker word is still missed here",
+        not _looks_like_placeholder("abc123"),
+    )
+    ok &= check(
+        "a single-bracket near-miss doesn't false-negative -- '<' alone still trips the marker fallback",
+        _looks_like_placeholder("<your_key>"),
+    )
+    return ok
+
+
+def eval_placeholder_sentinel_no_false_positive_on_real_values():
+    """The whole point of the sentinel over pure substring markers: a real value that
+    innocently contains a marker WORD (not the sentinel shape) still gets flagged by the
+    existing marker heuristic (documented, pre-existing behavior, unchanged) -- but this
+    confirms the NEW sentinel regex itself doesn't introduce any additional false
+    positives of its own on ordinary real-looking values."""
+    ok = True
+    ok &= check(
+        "an ordinary AWS-style key is not matched by the sentinel regex itself",
+        not bool(_PLACEHOLDER_SENTINEL_RE.match("AKIA1234567890ABCDEF")),
+    )
+    ok &= check(
+        "a real URL is not matched by the sentinel regex itself",
+        not bool(_PLACEHOLDER_SENTINEL_RE.match("https://example.org/api")),
+    )
+    return ok
+
+
 def eval_find_placeholder_credentials_in_py():
     """Regression check for the 2026-08-12 20260812_212915 run: the model wrote
     credentials into config.py as a Python dict instead of a .ini file, and VALIDATE
@@ -256,6 +306,33 @@ def eval_find_placeholder_credentials_in_py():
         return ok
 
 
+def eval_find_placeholder_config_values_catches_sentinel_end_to_end():
+    """Integration case: the sentinel is caught through the real find_placeholder_config_values
+    path (not just the unit-level _looks_like_placeholder check above), for a key that ISN'T
+    on any always_flag_keys list -- proving the sentinel alone, with no external_system context
+    at all, is enough to flag it. System-agnostic by construction."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "azure_config.ini")
+        parser = configparser.ConfigParser()
+        parser["DEFAULT"] = {
+            "region": "eastus",
+            "subscription_id": "<<your_subscription_id>>",
+        }
+        with open(path, "w") as f:
+            parser.write(f)
+
+        flagged = find_placeholder_config_values([path])
+        flagged_keys = {key for _, key, _ in flagged.get(path, [])}
+        ok = True
+        ok &= check(
+            "sentinel value flagged with no external_system set at all (system-agnostic)",
+            "subscription_id" in flagged_keys,
+            flagged_keys,
+        )
+        ok &= check("real-looking region value NOT flagged", "region" not in flagged_keys, flagged_keys)
+        return ok
+
+
 def eval_input_with_timeout_raises_on_no_response():
     """No real stdin is attached to this eval run, so input() hits EOF (or, on a
     real terminal with nobody typing, the timeout itself) either way proving the
@@ -281,6 +358,9 @@ if __name__ == "__main__":
         eval_empty_and_mysql_tightening(),
         eval_aws_credential_tightening(),
         eval_find_placeholder_credentials_in_py(),
+        eval_placeholder_sentinel_deterministic_format(),
+        eval_placeholder_sentinel_no_false_positive_on_real_values(),
+        eval_find_placeholder_config_values_catches_sentinel_end_to_end(),
         eval_input_with_timeout_raises_on_no_response(),
     ]
     sys.exit(0 if all(results) else 1)

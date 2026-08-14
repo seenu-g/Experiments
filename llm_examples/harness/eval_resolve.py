@@ -45,7 +45,9 @@ import tempfile
 
 from resolve import (
     autofix_stdlib_module_imports,
+    autofix_undefined_sibling_module_imports,
     check_missing_config_file_references,
+    check_plan_conformance,
     check_resolve_issues,
     check_undefined_function_calls,
     check_undefined_module_references,
@@ -95,6 +97,33 @@ def eval_valid_cross_file_reference_passes():
 
         issues = check_undefined_module_references([manager_path, entry_path])
         return check("valid function and class references pass", issues == [], issues)
+
+
+def eval_imported_name_reexposed_as_module_attr_not_falsely_flagged():
+    """Regression check for the 2026-08-15 20260815_003449 run: test_s3_manager.py
+    called test_ec2_manager.main(...), where 'main' came from
+    'from unittest import TestCase, main' in test_ec2_manager.py -- a genuinely valid,
+    callable reference (unittest.main is even a class, TestProgram, not a plain
+    function; verified live: `test_ec2_manager.main` really is callable). Python's
+    import statement binds a name into module scope exactly like a def/class does, so
+    it's a real module attribute from another file too -- but _top_level_defs only
+    counted FunctionDef/ClassDef/Assign, missing Import/ImportFrom entirely, so this
+    wrongly failed RESOLVE and burned a retry on already-correct code."""
+    with tempfile.TemporaryDirectory() as tmp:
+        source_path = os.path.join(tmp, "test_ec2_manager.py")
+        with open(source_path, "w") as f:
+            f.write("from unittest import TestCase, main\n\nclass Foo(TestCase):\n    pass\n")
+
+        entry_path = os.path.join(tmp, "test_s3_manager.py")
+        with open(entry_path, "w") as f:
+            f.write("import test_ec2_manager\n\ntest_ec2_manager.main()\n")
+
+        issues = check_undefined_module_references([source_path, entry_path])
+        return check(
+            "a name brought in via import (not def/class) is NOT falsely flagged as undefined",
+            issues == [],
+            issues,
+        )
 
 
 def eval_typo_in_cross_file_call_is_caught():
@@ -355,6 +384,96 @@ def eval_autofix_adds_missing_stdlib_import():
     return ok
 
 
+def eval_autofix_sibling_import_fixes_module_attr_pattern():
+    """Regression check for the 2026-08-15 20260815_020411 run: ec2_manager.py and
+    s3_manager.py both called logger.log_operation(...) without ever doing
+    'import logger', even though logger.py was one of the sibling files this same
+    attempt generated. Unambiguous fix: the module name is already named in the code."""
+    ec2_code = "def create():\n    logger.log_operation('x', 'create')\n"
+    logger_code = "def log_operation(name, action):\n    pass\n"
+    files = [("ec2_manager.py", ec2_code), ("logger.py", logger_code)]
+
+    fixed_files, fixes = autofix_undefined_sibling_module_imports(files, files)
+    fixed_ec2 = dict(fixed_files)["ec2_manager.py"]
+
+    ok = True
+    ok &= check("a fix description is returned", len(fixes) == 1, fixes)
+    ok &= check("'import logger' is added", fixed_ec2.startswith("import logger"), fixed_ec2)
+    ok &= check("logger.py itself is untouched", dict(fixed_files)["logger.py"] == logger_code)
+    return ok
+
+
+def eval_autofix_sibling_import_fixes_bare_call_pattern():
+    """Regression check for the 2026-08-15 20260815_024758 run: ec2_manager.py and
+    s3_manager.py both called log_action(...) as a BARE call (not
+    logger.log_action(...)) without ever doing 'from logger import log_action'.
+    Only auto-fixed since exactly one sibling file (logger.py) defines log_action
+    at module level -- an unambiguous match."""
+    ec2_code = "def create():\n    log_action('created')\n"
+    logger_code = "def log_action(msg):\n    pass\n"
+    files = [("ec2_manager.py", ec2_code), ("logger.py", logger_code)]
+
+    fixed_files, fixes = autofix_undefined_sibling_module_imports(files, files)
+    fixed_ec2 = dict(fixed_files)["ec2_manager.py"]
+
+    ok = True
+    ok &= check("a fix description is returned", len(fixes) == 1, fixes)
+    ok &= check(
+        "'from logger import log_action' is added",
+        fixed_ec2.startswith("from logger import log_action"),
+        fixed_ec2,
+    )
+    return ok
+
+
+def eval_autofix_sibling_import_skips_ambiguous_bare_call():
+    """If TWO sibling files both define a top-level name of the same bare call, RESOLVE
+    genuinely can't know which one to import from -- must not guess, same reasoning
+    check_undefined_function_calls's own docstring already gives for this case."""
+    main_code = "def run():\n    helper()\n"
+    a_code = "def helper():\n    pass\n"
+    b_code = "def helper():\n    pass\n"
+    files = [("main.py", main_code), ("a.py", a_code), ("b.py", b_code)]
+
+    fixed_files, fixes = autofix_undefined_sibling_module_imports(files, files)
+    ok = True
+    ok &= check("no fix applied when the match is ambiguous", fixes == [])
+    ok &= check("main.py content unchanged", dict(fixed_files)["main.py"] == main_code)
+    return ok
+
+
+def eval_autofix_sibling_import_no_op_when_nothing_missing():
+    code = "import logger\n\ndef create():\n    logger.log_operation('x', 'create')\n"
+    files = [("ec2_manager.py", code), ("logger.py", "def log_operation(a, b):\n    pass\n")]
+    fixed_files, fixes = autofix_undefined_sibling_module_imports(files, files)
+    ok = True
+    ok &= check("no fix applied when already correctly imported", fixes == [])
+    ok &= check("file content unchanged", dict(fixed_files)["ec2_manager.py"] == code)
+    return ok
+
+
+def eval_autofix_sibling_import_test_round_can_import_from_source_files():
+    """The test round's own `files` batch doesn't include the already-saved source
+    files -- sibling_files must be passed separately (source_files + test_files) so a
+    test file can still import from a source file it references without importing."""
+    test_code = "def test_create():\n    create_ec2_instance('t2.micro')\n"
+    source_code = "def create_ec2_instance(t):\n    pass\n"
+    test_files = [("test_ec2_manager.py", test_code)]
+    sibling_files = [("ec2_manager.py", source_code)] + test_files
+
+    fixed_files, fixes = autofix_undefined_sibling_module_imports(test_files, sibling_files)
+    fixed_test = dict(fixed_files)["test_ec2_manager.py"]
+
+    ok = True
+    ok &= check("a fix description is returned", len(fixes) == 1, fixes)
+    ok &= check(
+        "'from ec2_manager import create_ec2_instance' is added",
+        fixed_test.startswith("from ec2_manager import create_ec2_instance"),
+        fixed_test,
+    )
+    return ok
+
+
 def eval_autofix_never_touches_non_stdlib_names():
     """A missing import of a name that ISN'T a real stdlib module (e.g. a typo'd
     or hallucinated cross-file function) must be left alone -- autofix only
@@ -436,6 +555,88 @@ def eval_missing_config_file_reference_is_caught():
         return ok
 
 
+def eval_plan_conformance_flags_missing_planned_file():
+    planned_files = [
+        {"filename": "ec2_manager.py", "purpose": "", "functions": ["create_instance"], "entrypoint": True, "is_test": False},
+        {"filename": "app_config.ini", "purpose": "", "functions": [], "entrypoint": False, "is_test": False},
+    ]
+    files = [("ec2_manager.py", "def create_instance(name):\n    pass\n")]
+
+    issues = check_plan_conformance(files, planned_files)
+    ok = True
+    ok &= check("missing planned file is flagged", len(issues) == 1, str(issues))
+    ok &= check(
+        "detail names the missing file",
+        issues and "app_config.ini" in issues[0],
+        str(issues),
+    )
+    return ok
+
+
+def eval_plan_conformance_flags_missing_planned_function():
+    planned_files = [
+        {"filename": "ec2_manager.py", "purpose": "", "functions": ["create_instance", "delete_instance"], "entrypoint": True, "is_test": False},
+    ]
+    files = [("ec2_manager.py", "def create_instance(name):\n    pass\n")]
+
+    issues = check_plan_conformance(files, planned_files)
+    ok = True
+    ok &= check("missing planned function is flagged", len(issues) == 1, str(issues))
+    ok &= check(
+        "detail names the missing function",
+        issues and "delete_instance" in issues[0],
+        str(issues),
+    )
+    return ok
+
+
+def eval_plan_conformance_loose_on_extras():
+    planned_files = [
+        {"filename": "ec2_manager.py", "purpose": "", "functions": ["create_instance"], "entrypoint": True, "is_test": False},
+    ]
+    files = [
+        ("ec2_manager.py", "def _helper():\n    pass\n\ndef create_instance(name):\n    pass\n"),
+        ("extra_unplanned.py", "def unplanned_thing():\n    pass\n"),
+    ]
+
+    issues = check_plan_conformance(files, planned_files)
+    ok = check(
+        "extra unplanned helper functions/files are not flagged (loose by design)",
+        issues == [],
+        str(issues),
+    )
+    return ok
+
+
+def eval_plan_conformance_empty_or_none_planned_files_is_noop():
+    files = [("ec2_manager.py", "def create_instance(name):\n    pass\n")]
+    ok = True
+    ok &= check("empty planned_files list -> no issues", check_plan_conformance(files, []) == [])
+    ok &= check("None planned_files -> no issues", check_plan_conformance(files, None) == [])
+    return ok
+
+
+def eval_check_resolve_issues_integrates_plan_conformance():
+    planned_files = [
+        {"filename": "ec2_manager.py", "purpose": "", "functions": ["create_instance", "delete_instance"], "entrypoint": True, "is_test": False},
+    ]
+    code = "def create_instance(name):\n    pass\n"
+    path = _write_tmp("ec2_manager.py", code)
+    files = [("ec2_manager.py", code)]
+
+    passed, detail = check_resolve_issues([path], files=files, planned_files=planned_files)
+    ok = True
+    ok &= check("check_resolve_issues surfaces a plan-conformance failure", passed is False, detail)
+    ok &= check("detail names the missing planned function", "delete_instance" in detail, detail)
+
+    passed_default, _ = check_resolve_issues([path])
+    ok &= check(
+        "plan conformance is opt-in -- omitting files/planned_files skips it",
+        passed_default is True,
+    )
+    return ok
+
+
 def _write_tmp(filename, code):
     path = os.path.join(tempfile.mkdtemp(), filename)
     with open(path, "w") as f:
@@ -447,6 +648,7 @@ if __name__ == "__main__":
     results = [
         eval_self_import_undefined_class(),
         eval_valid_cross_file_reference_passes(),
+        eval_imported_name_reexposed_as_module_attr_not_falsely_flagged(),
         eval_typo_in_cross_file_call_is_caught(),
         eval_stdlib_and_third_party_calls_not_flagged(),
         eval_missing_import_usage_is_caught(),
@@ -460,6 +662,16 @@ if __name__ == "__main__":
         eval_autofix_adds_missing_stdlib_import(),
         eval_autofix_never_touches_non_stdlib_names(),
         eval_autofix_skips_non_python_and_unparseable_files(),
+        eval_autofix_sibling_import_fixes_module_attr_pattern(),
+        eval_autofix_sibling_import_fixes_bare_call_pattern(),
+        eval_autofix_sibling_import_skips_ambiguous_bare_call(),
+        eval_autofix_sibling_import_no_op_when_nothing_missing(),
+        eval_autofix_sibling_import_test_round_can_import_from_source_files(),
         eval_missing_config_file_reference_is_caught(),
+        eval_plan_conformance_flags_missing_planned_file(),
+        eval_plan_conformance_flags_missing_planned_function(),
+        eval_plan_conformance_loose_on_extras(),
+        eval_plan_conformance_empty_or_none_planned_files_is_noop(),
+        eval_check_resolve_issues_integrates_plan_conformance(),
     ]
     sys.exit(0 if all(results) else 1)

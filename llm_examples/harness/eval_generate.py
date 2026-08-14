@@ -25,12 +25,6 @@ from define import (
     strip_test_content,
 )
 from generate import (
-    AWS_INSTRUCTION,
-    AWS_TEST_INSTRUCTION,
-    LANGCHAIN_INSTRUCTION,
-    MYSQL_INSTRUCTION,
-    MYSQL_TEST_INSTRUCTION,
-    OLLAMA_INSTRUCTION,
     _format_source_code_context,
     build_source_system_instruction,
     build_test_system_instruction,
@@ -231,6 +225,52 @@ if __name__ == "__main__":
     return ok
 
 
+def eval_inline_entrypoint_annotation_on_file_header():
+    """Regression check for the 2026-08-14 20260814_163031 run: the model wrote
+    '# === FILE: ec2_manager.py (ENTRYPOINT) ===' -- folding the entrypoint marker
+    onto the SAME line as the FILE header, instead of the instructed separate
+    '# === ENTRYPOINT ===' line below it. The old FILE_HEADER_RE required the line
+    to end immediately after '===', so this format deviation meant the header
+    didn't match AT ALL -- the model's entire second file (real, correct code)
+    silently got swallowed into the first file's content block, and the run's
+    only saved file ended up named after the FIRST file (app_config.ini) with
+    the second file's code appended inside it as literal text. Burned all 3
+    retry attempts identically because the fed-back error ("Planned file
+    'ec2_manager.py' was never generated") gave the model no reason to suspect
+    its own header formatting was the actual cause."""
+    raw = (
+        "# === FILE: app_config.ini ===\n"
+        "[aws_credentials]\n"
+        "region = us-east-1\n"
+        "\n"
+        "# === FILE: ec2_manager.py (ENTRYPOINT) ===\n"
+        "import boto3\n"
+        "\n"
+        "def create_instance():\n"
+        "    pass\n"
+    )
+    files, entry = parse_generated_files(raw, default_filename="main.py")
+    names = [f for f, _ in files]
+    ok = True
+    ok &= check(
+        "both files parsed separately despite the inline (ENTRYPOINT) annotation",
+        names == ["app_config.ini", "ec2_manager.py"],
+        names,
+    )
+    ok &= check("entrypoint correctly identified as ec2_manager.py", entry == "ec2_manager.py", entry)
+    ok &= check(
+        "app_config.ini's content doesn't contain the second file's code",
+        "boto3" not in dict(files)["app_config.ini"],
+        dict(files)["app_config.ini"],
+    )
+    ok &= check(
+        "the inline annotation text itself doesn't leak into ec2_manager.py's saved code",
+        "ENTRYPOINT" not in dict(files)["ec2_manager.py"],
+        dict(files)["ec2_manager.py"],
+    )
+    return ok
+
+
 def eval_source_instruction_forbids_unrequested_command_dispatcher():
     """Regression check for the 2026-08-13 20260813_012157 run: the spec's Input
     line said 'User commands specifying the action...' (DEFINE's own paraphrase --
@@ -308,289 +348,6 @@ def eval_test_instruction_requires_test_file_to_run_its_tests():
         "instruction covers the bare test_*() function case too",
         "test_*()" in test_instruction,
         test_instruction,
-    )
-    return ok
-
-
-def eval_external_system_gates_aws_instruction():
-    ok = True
-    ok &= check(
-        "AWS block included when external_system=AWS",
-        AWS_INSTRUCTION in build_source_system_instruction(external_system="AWS"),
-    )
-    ok &= check(
-        "AWS block excluded when external_system=MySQL",
-        AWS_INSTRUCTION not in build_source_system_instruction(external_system="MySQL"),
-    )
-    ok &= check(
-        "AWS block excluded when external_system=None",
-        AWS_INSTRUCTION not in build_source_system_instruction(external_system="None"),
-    )
-    ok &= check(
-        "AWS block excluded when external_system=''",
-        AWS_INSTRUCTION not in build_source_system_instruction(external_system=""),
-    )
-    ok &= check(
-        "MySQL block included when external_system=MySQL Database",
-        MYSQL_INSTRUCTION in build_source_system_instruction(external_system="MySQL Database"),
-    )
-    ok &= check(
-        "MySQL block excluded when external_system=AWS",
-        MYSQL_INSTRUCTION not in build_source_system_instruction(external_system="AWS"),
-    )
-    ok &= check(
-        "AWS block excluded when external_system=MySQL Database",
-        AWS_INSTRUCTION not in build_source_system_instruction(external_system="MySQL Database"),
-    )
-    return ok
-
-
-def eval_config_format_instruction_requires_ini_file_to_be_output():
-    """Regression check for the 2026-08-13 20260813_013836 run (v3): ec2_manager.py
-    and s3_manager.py both called config.read('db_config.ini'), but the model never
-    once included a FILE block for db_config.ini itself across all 3 attempts.
-    configparser.read() silently no-ops on a missing file, so this only surfaced as
-    'KeyError: region' deep in EXECUTE. CONFIG_FORMAT_INSTRUCTION said to use an INI
-    file but never said the model must actually output it as one of its files --
-    this applies to both AWS and MySQL since both compose CONFIG_FORMAT_INSTRUCTION."""
-    ok = True
-    aws = build_source_system_instruction(external_system="AWS")
-    ok &= check(
-        "AWS prompt requires the .ini file to be one of the output FILE blocks",
-        "FILE: app_config.ini" in aws and "MUST itself be one of the files you output" in aws,
-        aws,
-    )
-    mysql = build_source_system_instruction(external_system="MySQL Database")
-    ok &= check(
-        "MySQL prompt requires the .ini file to be one of the output FILE blocks too",
-        "MUST itself be one of the files you output" in mysql,
-        mysql,
-    )
-    ok &= check(
-        "instruction requires ONE shared config file across AWS and DB credentials, not separate files",
-        "ONE INI file" in aws and "never split across separate config files" in aws,
-        aws,
-    )
-    return ok
-
-
-def eval_ollama_and_langchain_instructions():
-    """Regression check for the 2026-08-13 20260813_181809/20260813_182028 runs: the model
-    hallucinated a nonexistent ollama.initialize() function and a nonexistent
-    langchain.LangChainClient class, identically, 3 attempts in a row -- DEFINE correctly
-    classified the external system in both runs, but GENERATE had no corresponding
-    instruction the way it does for AWS/MySQL, so the model had nothing to ground it and
-    just guessed. OLLAMA_INSTRUCTION/LANGCHAIN_INSTRUCTION close that gap the same way
-    AWS_INSTRUCTION/MYSQL_INSTRUCTION already do for their systems."""
-    ok = True
-
-    ollama_source = build_source_system_instruction(external_system="Ollama")
-    ok &= check(
-        "OLLAMA_INSTRUCTION included when external_system mentions Ollama",
-        OLLAMA_INSTRUCTION in ollama_source,
-        ollama_source,
-    )
-    ok &= check(
-        "instruction names the real ollama.chat/ollama.generate API, not a guess",
-        "ollama.chat(" in ollama_source and "ollama.generate(" in ollama_source,
-        ollama_source,
-    )
-    ok &= check(
-        "instruction explicitly says there is no ollama.initialize()",
-        "ollama.initialize()" in ollama_source,
-        ollama_source,
-    )
-    ok &= check(
-        "instruction tells the model to actually let the LLM pick the tool, not keyword-match it",
-        "keyword-match" in ollama_source.lower(),
-        ollama_source,
-    )
-    ok &= check(
-        "LANGCHAIN_INSTRUCTION excluded when external_system doesn't mention langchain",
-        LANGCHAIN_INSTRUCTION not in ollama_source,
-        ollama_source,
-    )
-
-    langchain_source = build_source_system_instruction(external_system="Local Ollama model via LangChain")
-    ok &= check(
-        "LANGCHAIN_INSTRUCTION included when external_system mentions LangChain",
-        LANGCHAIN_INSTRUCTION in langchain_source,
-        langchain_source,
-    )
-    ok &= check(
-        "instruction names the real langchain_ollama.OllamaLLM API, not a guess",
-        "langchain_ollama" in langchain_source and "OllamaLLM" in langchain_source,
-        langchain_source,
-    )
-    ok &= check(
-        "instruction explicitly says there is no langchain.LangChainClient",
-        "LangChainClient" in langchain_source,
-        langchain_source,
-    )
-    ok &= check(
-        "OLLAMA_INSTRUCTION also included when external_system mentions LangChain (both can apply)",
-        OLLAMA_INSTRUCTION in langchain_source,
-        langchain_source,
-    )
-
-    neither_source = build_source_system_instruction(external_system="MySQL")
-    ok &= check(
-        "neither instruction appears for an unrelated external system",
-        OLLAMA_INSTRUCTION not in neither_source and LANGCHAIN_INSTRUCTION not in neither_source,
-        neither_source,
-    )
-
-    return ok
-
-
-def eval_aws_instruction_requires_region_and_credentials():
-    """Regression check for the 2026-08-13 20260813_003655 run and a follow-up gap found in
-    the same instruction: ec2_manager.py's boto3.client('ec2') calls never passed region_name,
-    and this machine has no ~/.aws/config or AWS_DEFAULT_REGION set -- botocore.exceptions.
-    NoRegionError fired before the call even reached moto's mocking. AWS_TEST_INSTRUCTION
-    already told the model to use region_name in the TEST file's own client creation, but
-    AWS_INSTRUCTION (source code) said nothing about region -- or credentials -- at all.
-
-    The credentials half: even once region_name was required, boto3.client('ec2',
-    region_name=...) still never passed aws_access_key_id/aws_secret_access_key, so the
-    'config file with credentials' the task asked for ended up only ever holding a region.
-    Harmless under moto (which injects dummy credentials regardless), but the generated code
-    would never authenticate against real AWS. Fixed the same way MYSQL_INSTRUCTION already
-    requires 'user'/'password' by exact key name. Both region and credentials are the same
-    underlying config-completeness requirement, so they're checked together here.
-
-    The source builder no longer takes a needs_tests param (a needs_tests=False task's whole
-    attempt is source-round-only), so there's only one case to check now."""
-    ok = True
-    source = build_source_system_instruction(external_system="AWS")
-
-    ok &= check(
-        "source AWS prompt requires region_name on every client",
-        "region_name" in source and "NoRegionError" in source,
-        source,
-    )
-    ok &= check(
-        "region must be read from the config file, not hardcoded in the boto3 call",
-        "region = us-east-1" in source and "config" in source.lower(),
-        source,
-    )
-    ok &= check(
-        "instruction requires exact credential key names in the config file",
-        "aws_access_key_id" in source and "aws_secret_access_key" in source,
-        source,
-    )
-    ok &= check(
-        "instruction requires every boto3 call to pass all three explicitly",
-        "aws_access_key_id=<config value>" in source and "aws_secret_access_key=<config value>" in source,
-        source,
-    )
-    ok &= check(
-        "instruction warns about NoCredentialsError, not just NoRegionError",
-        "NoCredentialsError" in source,
-        source,
-    )
-    return ok
-
-
-def eval_aws_test_instruction_forbids_deprecated_moto_api():
-    """Regression check for the 2026-08-12 20260812_235607 run: the model wrote
-    @mock_aws('s3') and @mock_aws('ec2') across all 3 attempts -- neither the old,
-    removed per-service moto API (mock_s3, mock_ec2) nor the current bare-decorator
-    one. The original AWS_TEST_INSTRUCTION only said HOW to use mock_aws
-    correctly; it never said what NOT to do, so the model wasn't warned off
-    either wrong pattern."""
-    ok = True
-    test_instruction = build_test_system_instruction(external_system="AWS")
-    ok &= check(
-        "instruction explicitly forbids @mock_aws(...) with an argument",
-        "mock_aws('s3')" in test_instruction or "no arguments" in test_instruction.lower(),
-        test_instruction,
-    )
-    ok &= check(
-        "instruction explicitly names the removed per-service decorators",
-        "mock_s3" in test_instruction and "mock_ec2" in test_instruction,
-        test_instruction,
-    )
-    return ok
-
-
-def eval_aws_test_instruction_requires_self_contained_tests():
-    """Regression check for the 2026-08-13 20260813_003655 run: test_get_all_s3
-    failed with 'False is not true' because test_create_delete_s3 created then
-    deleted 'test-bucket' before test_get_all_s3 ran (alphabetical unittest
-    order), so the bucket test_get_all_s3 expected to find was already gone --
-    it assumed state left behind by a different test instead of creating its
-    own. AWS_TEST_INSTRUCTION said how to mock AWS but never said tests must be
-    self-contained or that a test may only delete what it itself created."""
-    ok = True
-    test_instruction = build_test_system_instruction(external_system="AWS")
-    ok &= check(
-        "instruction requires each test to create its own resources",
-        "self-contained" in test_instruction.lower(),
-        test_instruction,
-    )
-    ok &= check(
-        "instruction forbids deleting/terminating resources a test didn't create",
-        "did not create" in test_instruction.lower() or "didn't create" in test_instruction.lower(),
-        test_instruction,
-    )
-    ok &= check(
-        "instruction requires a time-based unique resource name per test",
-        "int(time.time())" in test_instruction,
-        test_instruction,
-    )
-    ok &= check(
-        "instruction forbids a fixed literal resource name reused across tests",
-        "reused across multiple test methods" in test_instruction,
-        test_instruction,
-    )
-    ok &= check(
-        "instruction explicitly requires 'import time' when using time.time() for the name",
-        "'import time'" in test_instruction,
-        test_instruction,
-    )
-    return ok
-
-
-def eval_needs_tests_gates_test_instructions():
-    """After the two-round GENERATE split, needs_tests no longer gates prompt
-    CONTENT -- it gates whether round 2 runs at all (see code_harness.py). The
-    source builder never takes AWS_TEST_INSTRUCTION/MYSQL_TEST_INSTRUCTION (no
-    param exists to include them); the test builder always includes them when
-    the external system matches, since round 2 only ever runs when tests are
-    needed in the first place."""
-    ok = True
-    ok &= check(
-        "MySQL source instruction present",
-        MYSQL_INSTRUCTION in build_source_system_instruction(external_system="MySQL"),
-    )
-    ok &= check(
-        "MySQL test instruction never appears in the source builder's output",
-        MYSQL_TEST_INSTRUCTION not in build_source_system_instruction(external_system="MySQL"),
-    )
-    ok &= check(
-        "MySQL test instruction included in the test builder's output",
-        MYSQL_TEST_INSTRUCTION in build_test_system_instruction(external_system="MySQL"),
-    )
-    ok &= check(
-        "AWS source instruction present",
-        AWS_INSTRUCTION in build_source_system_instruction(external_system="AWS"),
-    )
-    ok &= check(
-        "AWS test instruction (moto) never appears in the source builder's output",
-        AWS_TEST_INSTRUCTION not in build_source_system_instruction(external_system="AWS"),
-    )
-    ok &= check(
-        "AWS test instruction (moto) included in the test builder's output",
-        AWS_TEST_INSTRUCTION in build_test_system_instruction(external_system="AWS"),
-    )
-    ok &= check(
-        "source builder explicitly forbids writing a test file",
-        "do not write any test file" in build_source_system_instruction().lower(),
-    )
-    ok &= check(
-        "test builder explicitly says to write only the test file(s)",
-        "write only the test file" in build_test_system_instruction().lower(),
     )
     return ok
 
@@ -902,16 +659,10 @@ if __name__ == "__main__":
         eval_single_file_fallback(),
         eval_stray_closing_fence_stripped(),
         eval_duplicate_file_block_deduped(),
+        eval_inline_entrypoint_annotation_on_file_header(),
         eval_source_instruction_forbids_unrequested_command_dispatcher(),
         eval_source_instruction_forbids_writing_tests_when_fixing_a_test_failure(),
         eval_test_instruction_requires_test_file_to_run_its_tests(),
-        eval_config_format_instruction_requires_ini_file_to_be_output(),
-        eval_external_system_gates_aws_instruction(),
-        eval_ollama_and_langchain_instructions(),
-        eval_aws_instruction_requires_region_and_credentials(),
-        eval_aws_test_instruction_forbids_deprecated_moto_api(),
-        eval_aws_test_instruction_requires_self_contained_tests(),
-        eval_needs_tests_gates_test_instructions(),
         eval_format_source_code_context(),
         eval_apply_external_system_override(),
         eval_apply_needs_tests_override(),

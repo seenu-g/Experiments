@@ -32,13 +32,19 @@ credentials) before EXECUTE runs it for real -- see validate.py for why
 lint/compile don't need this.
 
 Requires Ollama running locally with config.LOCAL_MODEL pulled.
+
+Non-interactive by default: DEFINE/PLAN/SAVE-permission checkpoints auto-confirm
+(see confirm.auto_confirm) rather than waiting on real y/N input, so one full
+iteration runs straight through instead of pausing for a human at each stage --
+the confirmed spec/plan text is still written to run.log either way. Pass
+--interactive on the command line to get real confirmation prompts back.
 """
 
 import os
 import time
 
 from compile import compile_files
-from confirm import default_confirm
+from confirm import auto_confirm, default_confirm
 from config import MAX_STAGE_ATTEMPTS
 from define import (
     define_task,
@@ -55,7 +61,12 @@ from generate import (
 )
 from lint import lint_files
 from log import get_logger
-from resolve import autofix_stdlib_module_imports, check_resolve_issues
+from plan import plan_task
+from resolve import (
+    autofix_stdlib_module_imports,
+    autofix_undefined_sibling_module_imports,
+    check_resolve_issues,
+)
 from save import (
     confirm_save_permission,
     make_run_dir,
@@ -63,6 +74,7 @@ from save import (
     stage_attempt,
     write_stage_result,
 )
+from systems import ALL_SYSTEMS
 from validate import validate_environment
 
 
@@ -75,7 +87,7 @@ def _skip_downstream(run_dir, version, downstream_stages, skip_detail, log_reaso
 
 
 def run_harness(
-    confirm=default_confirm,
+    confirm=auto_confirm,
     is_test: bool = False,
     ask_local_model_for_source_code=ask_local_model_for_source_code,
     ask_local_model_for_test_code=ask_local_model_for_test_code,
@@ -100,6 +112,10 @@ def run_harness(
     if needs_tests:
         logger.info(f"Test-round spec (Test Steps only):\n{test_spec}")
 
+    planned_files = plan_task(spec, external_system, needs_tests, confirm, logger)
+    source_planned_files = [f for f in planned_files if not f["is_test"]]
+    test_planned_files = [f for f in planned_files if f["is_test"]]
+
     if not confirm_save_permission(run_dir, confirm):
         logger.info("Save permission denied by user. Aborting.")
         return False
@@ -119,11 +135,20 @@ def run_harness(
                 else f"{source_spec}\n\nFix this error:\n{source_error_context}"
             )
             raw_output = ask_local_model_for_source_code(
-                current_source_spec, error_context=source_error_context, external_system=external_system,
+                current_source_spec,
+                error_context=source_error_context,
+                external_system=external_system,
+                planned_files=source_planned_files,
             )
             files, entry_filename = parse_generated_files(raw_output, default_filename="main.py")
 
             files, autofix_details = autofix_stdlib_module_imports(files)
+            for system in ALL_SYSTEMS:
+                for autofix in system.AUTOFIXES:
+                    files, system_fix_details = autofix(files)
+                    autofix_details += system_fix_details
+            files, sibling_fix_details = autofix_undefined_sibling_module_imports(files, files)
+            autofix_details += sibling_fix_details
             for detail in autofix_details:
                 logger.info(f"Auto-fix (source) v{version}: {detail}")
 
@@ -167,7 +192,9 @@ def run_harness(
                 continue
 
             staged_non_py_filenames = {os.path.basename(p) for p in staged_non_py_paths}
-            resolve_passed, resolve_detail = check_resolve_issues(staged_py_paths, staged_non_py_filenames)
+            resolve_passed, resolve_detail = check_resolve_issues(
+                staged_py_paths, staged_non_py_filenames, files=files, planned_files=source_planned_files
+            )
             write_stage_result(run_dir, "resolve", version, resolve_passed, resolve_detail)
             logger.info(f"Resolve v{version}: {'PASS' if resolve_passed else 'FAIL - ' + resolve_detail}")
             if not resolve_passed:
@@ -201,13 +228,25 @@ def run_harness(
                 else f"{test_spec}\n\nFix this error:\n{test_error_context}"
             )
             raw_test_output = ask_local_model_for_test_code(
-                current_test_spec, source_files, error_context=test_error_context, external_system=external_system,
+                current_test_spec,
+                source_files,
+                error_context=test_error_context,
+                external_system=external_system,
+                planned_files=test_planned_files,
             )
             test_files, test_entry_filename = parse_generated_files(
                 raw_test_output, default_filename="test_main.py"
             )
 
             test_files, autofix_details = autofix_stdlib_module_imports(test_files)
+            for system in ALL_SYSTEMS:
+                for autofix in system.AUTOFIXES:
+                    test_files, system_fix_details = autofix(test_files)
+                    autofix_details += system_fix_details
+            test_files, sibling_fix_details = autofix_undefined_sibling_module_imports(
+                test_files, source_files + test_files
+            )
+            autofix_details += sibling_fix_details
             for detail in autofix_details:
                 logger.info(f"Auto-fix (test) v{version}: {detail}")
 
@@ -246,7 +285,10 @@ def run_harness(
 
             staged_non_py_filenames = {os.path.basename(p) for p in staged_non_py_paths}
             test_resolve_passed, test_resolve_detail = check_resolve_issues(
-                staged_py_paths, staged_non_py_filenames
+                staged_py_paths,
+                staged_non_py_filenames,
+                files=test_files,
+                planned_files=test_planned_files,
             )
             write_stage_result(run_dir, "test_resolve", version, test_resolve_passed, test_resolve_detail)
             logger.info(
@@ -317,4 +359,16 @@ def run_harness(
 
 
 if __name__ == "__main__":
-    run_harness()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Local-model Python code-generation harness.")
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Wait for real y/N confirmation at each DEFINE/PLAN/SAVE checkpoint instead of "
+        "auto-confirming (the default). The confirmed spec/plan text is written to run.log "
+        "either way -- this only controls whether the run pauses for a human to approve it.",
+    )
+    args = parser.parse_args()
+
+    run_harness(confirm=default_confirm if args.interactive else auto_confirm)

@@ -43,13 +43,25 @@ def _module_stem(path: str) -> str:
 
 
 def _top_level_defs(tree: ast.AST) -> set:
-    """Names defined at module level: functions, classes, and simple assignments."""
+    """Names defined at module level: functions, classes, simple assignments, AND
+    imports -- Python's import statement binds a name into module scope exactly like a
+    def or class does, so it becomes a real, accessible `module.attr` from another
+    file too. Confirmed as a real false positive (2026-08-15, the 20260815_003449
+    run): `from unittest import main` makes `some_module.main` a genuinely valid,
+    callable reference (`unittest.main` is even a class, `TestProgram`, not a plain
+    function), but Import/ImportFrom weren't counted here, so
+    check_undefined_module_references wrongly flagged and retried an already-correct
+    version."""
     names = set()
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
         elif isinstance(node, ast.Assign):
             names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+        elif isinstance(node, ast.Import):
+            names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            names.update(alias.asname or alias.name for alias in node.names)
     return names
 
 
@@ -228,6 +240,141 @@ def autofix_stdlib_module_imports(files: list) -> tuple[list, list[str]]:
     return fixed_files, fixes
 
 
+def autofix_undefined_sibling_module_imports(files: list, sibling_files: list) -> tuple[list, list[str]]:
+    """Deterministically fix the same narrow bug class as autofix_stdlib_module_imports,
+    for a SIBLING GENERATED FILE instead of a stdlib module, in the two shapes it's
+    actually shown up in real runs:
+
+    - `X.attr(...)` where X is undefined locally but X.py IS one of the sibling files
+      -> 'import X'. Unambiguous: the module name is already spelled out in the code.
+      Regression case (2026-08-15, 20260815_020411): ec2_manager.py/s3_manager.py both
+      called logger.log_operation(...) without ever importing logger.
+    - a bare `foo(...)` where foo is undefined locally but EXACTLY ONE sibling file
+      defines `foo` at module level -> 'from that_module import foo'. Only auto-fixed
+      when the match is unique -- if 2+ sibling files define the same top-level name,
+      this is genuinely ambiguous (same reasoning check_undefined_function_calls's own
+      docstring already gives for not guessing), so it's left for a normal retry
+      instead of risking importing from the wrong file. Regression case (2026-08-15,
+      20260815_024758): ec2_manager.py/s3_manager.py both called log_action(...) as a
+      bare call (not logger.log_action(...)) without ever doing 'from logger import
+      log_action'.
+
+    `sibling_files`: the (filename, code) pairs available to import from -- for the
+    source round this is that round's own files; for the test round it should also
+    include the already-saved source files, since a test file can legitimately
+    reference a source function without importing it too.
+
+    Returns (fixed_files, fix_descriptions)."""
+    sibling_top_level_defs = {}
+    for sib_filename, sib_code in sibling_files:
+        if not sib_filename.endswith(".py"):
+            continue
+        try:
+            sibling_top_level_defs[_module_stem(sib_filename)] = _top_level_defs(
+                ast.parse(sib_code, filename=sib_filename)
+            )
+        except SyntaxError:
+            continue
+    available_module_stems = set(sibling_top_level_defs)
+
+    fixed_files = []
+    fixes = []
+    for filename, code in files:
+        if not filename.endswith(".py"):
+            fixed_files.append((filename, code))
+            continue
+
+        try:
+            tree = ast.parse(code, filename=filename)
+        except SyntaxError:
+            fixed_files.append((filename, code))
+            continue
+
+        own_stem = _module_stem(filename)
+        defined = _all_defined_names(tree) | _BUILTIN_NAMES
+
+        missing_sibling_modules = set()
+        missing_names_to_module = {}
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and isinstance(node.value.ctx, ast.Load)
+                and node.value.id not in defined
+                and node.value.id != own_stem
+                and node.value.id in available_module_stems
+            ):
+                missing_sibling_modules.add(node.value.id)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and isinstance(node.func.ctx, ast.Load)
+                and node.func.id not in defined
+                and node.func.id not in missing_names_to_module
+            ):
+                matches = [
+                    stem
+                    for stem, names in sibling_top_level_defs.items()
+                    if stem != own_stem and node.func.id in names
+                ]
+                if len(matches) == 1:
+                    missing_names_to_module[node.func.id] = matches[0]
+
+        new_import_lines = []
+        if missing_sibling_modules:
+            new_import_lines.extend(f"import {name}" for name in sorted(missing_sibling_modules))
+            fixes.extend(
+                f"{filename}: auto-added missing 'import {name}' (sibling generated file)"
+                for name in sorted(missing_sibling_modules)
+            )
+        if missing_names_to_module:
+            for name in sorted(missing_names_to_module):
+                module = missing_names_to_module[name]
+                new_import_lines.append(f"from {module} import {name}")
+                fixes.append(
+                    f"{filename}: auto-added missing 'from {module} import {name}' "
+                    f"(sibling generated file)"
+                )
+
+        if new_import_lines:
+            code = "\n".join(new_import_lines) + "\n" + code
+
+        fixed_files.append((filename, code))
+
+    return fixed_files, fixes
+
+
+def _replace_statement_lines(code: str, node: ast.AST, replacement: str) -> str:
+    """Replace the full source lines spanned by a statement node with `replacement`
+    (which must end in its own newline). Line-based, not column-precise -- generic
+    utility for any autofix targeting a whole simple statement (Assign/Return/Expr)
+    that occupies its own line(s), never sharing a line with other statements. Used
+    by systems/aws.py's autofix_s3_us_east_1_location_constraint."""
+    lines = code.splitlines(keepends=True)
+    start = node.lineno - 1
+    end = node.end_lineno
+    return "".join(lines[:start]) + replacement + "".join(lines[end:])
+
+
+def _replace_source_span(code: str, node: ast.AST, replacement: str) -> str:
+    """Column-precise replacement of exactly the source text a node spans (possibly a
+    sub-expression, not a whole statement) -- unlike _replace_statement_lines, this
+    preserves whatever else shares the node's line(s) (e.g. an `assert` keyword before
+    it, or a failure-message argument after it)."""
+    lines = code.splitlines(keepends=True)
+    start_line, end_line = node.lineno - 1, node.end_lineno - 1
+    start_col, end_col = node.col_offset, node.end_col_offset
+
+    if start_line == end_line:
+        line = lines[start_line]
+        new_line = line[:start_col] + replacement + line[end_col:]
+        return "".join(lines[:start_line]) + new_line + "".join(lines[start_line + 1 :])
+
+    first = lines[start_line][:start_col] + replacement
+    last = lines[end_line][end_col:]
+    return "".join(lines[:start_line]) + first + last + "".join(lines[end_line + 1 :])
+
+
 def check_undefined_function_calls(py_paths: list) -> list:
     """Catch a bare call `foo(...)` where `foo` is never imported, defined, or
     otherwise bound anywhere in the file -- e.g. a test file calling
@@ -308,7 +455,57 @@ def check_missing_config_file_references(py_paths: list, generated_non_py_filena
     return issues
 
 
-def check_resolve_issues(py_paths: list, generated_non_py_filenames: set | None = None) -> tuple[bool, str]:
+def check_plan_conformance(files: list, planned_files: list) -> list:
+    """Catch a PLAN-stage promise GENERATE didn't keep: a planned filename that
+    never appears among the actually-generated `files`, or a planned top-level
+    function/class name missing from that file's actual top-level defs (reuses
+    _top_level_defs, same as check_undefined_module_references).
+
+    Deliberately loose on everything else -- extra helper functions, extra
+    files, or different implementation details are all fine; only "promised
+    but missing" is flagged, so this doesn't fight normal model variation
+    between retries. `files` is the (filename, code) list for ONE round only
+    (source or test) -- the caller is responsible for passing the matching
+    is_test-filtered subset of planned_files (see code_harness.py).
+
+    Returns every distinct issue found (possibly empty). An empty/None
+    `planned_files` (e.g. no PLAN stage ran) always returns no issues."""
+    if not planned_files:
+        return []
+
+    code_by_filename = dict(files)
+    issues = []
+    for planned in planned_files:
+        filename = planned["filename"]
+        if filename not in code_by_filename:
+            issues.append(f"Planned file '{filename}' was never generated in this attempt.")
+            continue
+
+        if not filename.endswith(".py") or not planned["functions"]:
+            continue
+
+        try:
+            tree = ast.parse(code_by_filename[filename], filename=filename)
+        except SyntaxError:
+            continue  # LINT already reports syntax errors; don't double-report here
+
+        defined = _top_level_defs(tree)
+        for func_name in planned["functions"]:
+            if func_name not in defined:
+                issues.append(
+                    f"Planned file '{filename}' was supposed to define '{func_name}', but it "
+                    f"doesn't appear among its top-level functions/classes."
+                )
+
+    return issues
+
+
+def check_resolve_issues(
+    py_paths: list,
+    generated_non_py_filenames: set | None = None,
+    files: list | None = None,
+    planned_files: list | None = None,
+) -> tuple[bool, str]:
     """Runs all static resolution checks and combines every issue any of them
     finds into a single failure detail, so one retry can address all of them
     instead of discovering them one at a time across multiple attempts.
@@ -316,7 +513,11 @@ def check_resolve_issues(py_paths: list, generated_non_py_filenames: set | None 
     generated_non_py_filenames: basenames of every non-.py file this attempt
     actually generated (e.g. {'app_config.ini'}). Passing None skips
     check_missing_config_file_references entirely -- opt-in so existing
-    callers that only care about the .py-to-.py checks are unaffected."""
+    callers that only care about the .py-to-.py checks are unaffected.
+
+    files + planned_files: this round's (filename, code) pairs and the
+    matching PLAN-stage manifest subset. Passing None for either skips
+    check_plan_conformance entirely -- same opt-in pattern."""
     issues = (
         check_undefined_module_references(py_paths)
         + check_undefined_module_usage(py_paths)
@@ -324,6 +525,8 @@ def check_resolve_issues(py_paths: list, generated_non_py_filenames: set | None 
     )
     if generated_non_py_filenames is not None:
         issues += check_missing_config_file_references(py_paths, generated_non_py_filenames)
+    if files is not None and planned_files is not None:
+        issues += check_plan_conformance(files, planned_files)
     if not issues:
         return True, ""
     return False, "\n".join(issues)

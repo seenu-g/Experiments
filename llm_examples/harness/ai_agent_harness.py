@@ -52,6 +52,15 @@ _BUILTIN_NAMES = set(dir(builtins)) | {"__name__", "__file__", "__doc__"}
 # GLOBAL CONFIGURATION
 # =====================================================================
 LOCAL_MODEL = "hermes3:latest"
+
+# keep_alive is a parameter of Ollama's own /api/chat endpoint, not a model-specific
+# feature -- works identically regardless of which model is loaded. Mirrors
+# config.OLLAMA_KEEP_ALIVE's value as a LOCAL constant rather than importing it, per
+# this file's own standalone invariant above (zero imports from config.py/the shared
+# pipeline). Without it, Ollama's 5-minute default idle timeout risks a full model
+# reload between this script's DEFINE-confirm pause and its first real GENERATE call.
+OLLAMA_KEEP_ALIVE = "30m"
+
 RUN_ID = time.strftime("%Y%m%d_%H%M%S")
 OUTPUT_ROOT = os.path.join(os.path.dirname(__file__), "ai_agent_output", RUN_ID)
 
@@ -181,6 +190,7 @@ def _ask(system_instruction: str, user_content: str, log) -> str:
             {"role": "user", "content": user_content},
         ],
         options={"temperature": 0.1},
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
     return response["message"]["content"]
 
@@ -348,10 +358,43 @@ def _all_defined_names(tree: ast.AST) -> set:
     return names
 
 
+def _find_datetime_platform_mixups(tree: ast.AST) -> list[str]:
+    """Flags the exact bug LOCAL_SYSTEM_CALL_INSTRUCTION warns against and that has
+    now shown up in real generated output (see ai_agent_output/20260814_041102/attempt4):
+    a function named like a date/time tool (e.g. get_current_datetime) whose body calls
+    platform.system()/uname()/python_version() instead of the datetime module -- these
+    return the OS name or Python version, not a date/time, but ast's undefined-name scan
+    can't catch it since every name involved IS defined/imported correctly."""
+    issues = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not re.search(r"date|time", node.name, re.IGNORECASE):
+            continue
+        if re.search(r"runtime|timeout", node.name, re.IGNORECASE):
+            continue
+        for sub in ast.walk(node):
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Attribute)
+                and isinstance(sub.func.value, ast.Name)
+                and sub.func.value.id == "platform"
+                and sub.func.attr in ("system", "uname", "python_version", "python_version_tuple")
+            ):
+                issues.append(
+                    f"'{node.name}' looks like a date/time tool but calls "
+                    f"platform.{sub.func.attr}() -- that returns OS/version info, not a "
+                    "date/time value. It must use 'import datetime' then "
+                    "'datetime.datetime.now()' instead."
+                )
+    return issues
+
+
 def static_check(path: str) -> tuple[bool, str]:
     """Returns (passed, detail). Checks, in order: syntax (ast.parse), bytecode
     compile (py_compile), then a flat scan for any `name.attr(...)` or bare
-    `name(...)` where `name` is never imported or defined anywhere in the file."""
+    `name(...)` where `name` is never imported or defined anywhere in the file,
+    then the datetime/platform mix-up check above."""
     with open(path) as f:
         source = f.read()
 
@@ -381,6 +424,8 @@ def static_check(path: str) -> tuple[bool, str]:
                     f"'{node.id}' is used but never imported or defined anywhere in "
                     f"{os.path.basename(path)}."
                 )
+
+    issues.extend(_find_datetime_platform_mixups(tree))
 
     if issues:
         return False, "\n".join(issues)

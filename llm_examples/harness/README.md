@@ -12,6 +12,13 @@ runs out.
 - [Ollama](https://ollama.com) running locally
 - The model in `config.py`'s `LOCAL_MODEL` pulled (`ollama pull qwen2.5-coder:7b`)
 
+Every `ollama.chat()` call across DEFINE/PLAN/GENERATE passes an explicit
+`keep_alive` (`config.OLLAMA_KEEP_ALIVE`, default `"30m"`) instead of relying
+on Ollama's own 5-minute idle default -- one full iteration makes several
+separate calls, and without this, a longer generation or a slow confirmation
+pause between them risks the model being unloaded and paying a full reload
+cost on the next call.
+
 ## Running it
 
 ```bash
@@ -19,10 +26,23 @@ cd llm_examples/harness
 python code_harness.py
 ```
 
-It's fully interactive: it'll ask you to describe the task, confirm the
-restated spec, confirm permission to save attempts to disk, and -- if the
-generated code needs something you haven't given it (a library, a real
-credential) -- ask for that too.
+You're always asked to describe the task, and -- if the generated code needs
+something you haven't given it (a library, a real credential) -- VALIDATE
+still asks for that too (see below; those prompts genuinely need a real
+answer, so they're unaffected by the flag below).
+
+**Non-interactive by default otherwise.** The DEFINE spec, PLAN's file
+manifest, and the SAVE-permission checkpoint all auto-confirm rather than
+waiting on real y/N input, so one full DEFINE -> PLAN -> GENERATE -> ... ->
+EXECUTE iteration runs straight through instead of pausing for a human at
+each stage. The confirmed spec/plan text is still written to `run.log`
+either way -- only the wait is skipped. Pass `--interactive` to get real
+confirmation prompts back (useful while you're still learning how a stage's
+output looks, less useful once you trust the loop):
+
+```bash
+python code_harness.py --interactive
+```
 
 **Tests are optional, not assumed.** If your description doesn't ask for
 tests, verification, or a test client/script, DEFINE detects that (`Tests
@@ -33,12 +53,29 @@ happens unless you actually asked for it.
 ## The pipeline
 
 ```
-DEFINE -> GENERATE (source) -> [ GENERATE (test) ] -> LINT -> RESOLVE -> COMPILE -> VALIDATE -> EXECUTE
+DEFINE -> PLAN -> GENERATE (source) -> [ GENERATE (test) ] -> LINT -> RESOLVE -> COMPILE -> VALIDATE -> EXECUTE
 ```
 
 Each stage is its own file. `code_harness.py` is pure orchestration -- it
 calls each stage, records the result, and decides what happens next; it
 doesn't implement any stage's logic itself.
+
+**Per-system knowledge lives in its own module, not in the pipeline files.**
+`generate.py`, `resolve.py`, and `plan.py` are generic Python/architecture
+tooling -- they know nothing about AWS, MySQL, or Ollama specifically. Each
+external system's prompt instructions and deterministic autofixes live in
+`systems/<name>.py` instead (`systems/aws.py`, `systems/mysql.py`,
+`systems/ollama.py`, `systems/langchain.py`), each exposing the same shape
+(`NAME`, `matches(external_system)`, `NEEDS_CONFIG_FILE`, `SOURCE_INSTRUCTION`,
+`TEST_INSTRUCTION`, `AUTOFIXES`). The pipeline files dispatch generically over
+`systems.ALL_SYSTEMS` instead of hardcoding `if "aws" in external_system.lower()`
+branches everywhere -- adding a new system means adding one new module under
+`systems/` and one line in `systems/__init__.py`, not touching GENERATE,
+RESOLVE, or PLAN at all. Evals mirror the same split: system-specific eval
+cases live in `systems/eval_<name>.py`, run via `python -m systems.eval_<name>`
+(needs `-m` so both `harness/` and `systems/` resolve on `sys.path`); the
+pipeline files' own evals (`eval_generate.py`, `eval_resolve.py`, `eval_plan.py`)
+only cover generic, system-agnostic behavior.
 
 GENERATE is two ordered calls per attempt, not one:
 
@@ -52,13 +89,14 @@ This mirrors how a person writes code-then-test, and eliminates the whole
 | Stage | File | What it does |
 |---|---|---|
 | DEFINE | `define.py` | Restates your free-text description as a structured spec (`Input` / `Output` / `Steps` / `Test Steps` / `External System called` / `Tests needed`) via the model, and loops until you confirm it's correct. Also applies deterministic keyword-based overrides on top of the model's own `External System called:` and `Tests needed:` classifications -- see below. |
-| GENERATE (source) | `generate.py` | Asks the model to write the production code. Gets a test-free spec (`Test Steps` stripped out -- see below), and AWS/MySQL-specific rules only when relevant. |
-| autofix | `resolve.py` (`autofix_stdlib_module_imports`) | Auto-patches one narrow bug before anything is saved: a missing `import` for a bare stdlib name (e.g. `time.time()` without `import time`). Deterministic, so it doesn't cost a retry the way an ambiguous bug would. |
-| GENERATE (test) | `generate.py` | Only runs if `Tests needed: Yes`. Asks the model to write test(s), showing it the real, already-saved source files as context (not a description of them) plus just the spec's `Test Steps`. |
+| PLAN | `plan.py` | Restates the confirmed spec as a concrete file manifest -- one block per planned file (`FILE` / `PURPOSE` / `FUNCTIONS` / `ENTRYPOINT` / `ROUND: source or test`) -- and loops until you confirm it. Becomes a fixed contract for the whole run: `check_plan_conformance` (in `resolve.py`) later verifies GENERATE's actual output against it, catching a promised-but-missing file/function immediately after GENERATE instead of possibly not until EXECUTE. Deliberately loose on everything else -- extra helper functions, extra files, and different implementation details are all fine; only "promised but missing" is flagged, so normal model variation between retries doesn't fight it. |
+| GENERATE (source) | `generate.py` | Asks the model to write the production code. Gets a test-free spec (`Test Steps` stripped out -- see below), AWS/MySQL/Ollama/LangChain-specific rules only when relevant, and the PLAN's source-file subset rendered as context (`_format_plan_context`). |
+| autofix | `resolve.py` + `systems/*.py` | Four deterministic, no-retry-cost patches applied to GENERATE's raw output before anything is saved -- see "Deterministic autofixes" below. |
+| GENERATE (test) | `generate.py` | Only runs if `Tests needed: Yes`. Asks the model to write test(s), showing it the real, already-saved source files as context (not a description of them), the spec's `Test Steps`, and the PLAN's test-file subset. |
 | SAVE | `save.py` | Writes every attempt -- pass or fail -- to `output/<run_id>/` under a flat, version-suffixed name (`main_v1.py`, `main_v2.py`, ...), so a failed attempt stays inspectable instead of being discarded. Runs once after the source round, and again (source + test files together) after the test round. |
 | STAGE | `save.py` (`stage_attempt`) | Writes a second, *unversioned*-filename copy into `output/<run_id>/stage_v<N>/`. Every check from here on runs against this staged copy, not the versioned save -- the generated code's own `import sibling_module` statements only resolve against the original filenames, not `sibling_module_v3.py`. |
 | LINT | `lint.py` | `ast.parse()` on every staged `.py` file -- pure syntax check, no imports touched. Runs once for the source round's own files (stage-result name `lint`), and again for the combined source+test files after the test round (`test_lint`). |
-| RESOLVE | `resolve.py` | Catches references that syntax checks can't: a call to something never actually defined anywhere, or a config file the code reads but was never generated. Purely AST-based, no execution -- see below for the three specific things it checks. Same source/test-round split as LINT (`resolve` / `test_resolve`). |
+| RESOLVE | `resolve.py` | Catches references that syntax checks can't: a call to something never actually defined anywhere, a config file the code reads but was never generated, or a PLAN-promised file/function GENERATE silently dropped. Purely AST-based, no execution -- see below for the four specific things it checks. Same source/test-round split as LINT (`resolve` / `test_resolve`). |
 | COMPILE | `compile.py` | `py_compile` on every staged `.py` file -- bytecode-level check, still doesn't execute or import anything third-party. Same split (`compile` / `test_compile`). |
 | VALIDATE | `validate.py` | Runs once, on the final combined file set. Checks what LINT/RESOLVE/COMPILE can't: is every third-party library actually installed (prompts you to `pip install` it if not), and does any credential value look real or still a placeholder the model invented (prompts you for the real value if so) -- see below. |
 | EXECUTE | `execute.py` | Runs the entrypoint in a subprocess (10s timeout) against the staged `stage_v<N>/` copy and captures exit code / stdout / stderr. |
@@ -172,7 +210,7 @@ config files code reads. RESOLVE catches the first kind of gap (a
 reference that's syntactically valid but still wrong); VALIDATE catches the
 second (an environment problem, not a code problem).
 
-**RESOLVE's three checks** (all purely AST-based, no execution; a failure
+**RESOLVE's four checks** (all purely AST-based, no execution; a failure
 here retries like a LINT/COMPILE failure since regenerated code *can* fix
 it):
 
@@ -188,6 +226,12 @@ it):
   block was ever actually output this attempt. `configparser.read()`
   doesn't raise for a missing file, it silently does nothing, so this would
   otherwise only surface as a confusing `KeyError` deep inside EXECUTE.
+- **A PLAN-promised file or function that's missing from the actual output**
+  (`check_plan_conformance`, opt-in via `planned_files`) -- the source
+  round's output is checked against the PLAN's source-file subset, the test
+  round's against its test-file subset, each riding that round's own
+  retry (a source-round conformance failure doesn't regenerate the test
+  round, and vice versa).
 
 **VALIDATE's two checks** (an environment problem, not a code problem, so
 it gets fundamentally different treatment -- see below):
@@ -199,8 +243,9 @@ it gets fundamentally different treatment -- see below):
 - **Placeholder credentials** (`find_placeholder_config_values` for `.ini`
   files, `find_placeholder_credentials_in_py` as a fallback for `.py`
   config): flags empty values, values matching markers like `password`,
-  `changeme`, `your_`, `example`, and -- unconditionally, regardless of
-  marker match -- MySQL's `user`/`password` and AWS's
+  `changeme`, `your_`, `example`, GENERATE's own deterministic
+  `<<your_KEY_NAME>>` sentinel (see below), and -- unconditionally,
+  regardless of marker match -- MySQL's `user`/`password` and AWS's
   `aws_access_key_id`/`aws_secret_access_key`, since a fake-but-plausible
   value like `abc123` or a made-up access key ID won't match any marker,
   and there's no point letting EXECUTE run against a real database or AWS
@@ -208,6 +253,19 @@ it gets fundamentally different treatment -- see below):
   value, which gets written into the **staged** `stage_v<N>/` copy only --
   the versioned `output/<run_id>/` save stays an untouched record of
   exactly what the model produced.
+
+**The `<<your_KEY_NAME>>` placeholder sentinel.** The marker-word list above
+is a heuristic guess -- it can both miss a model-invented placeholder that
+doesn't happen to contain any of those words, and wrongly flag a genuinely
+real value that happens to contain one (e.g. a URL field containing
+`example.com`). `CONFIG_FORMAT_INSTRUCTION` (in `generate.py`, shared by
+every system that touches config -- AWS, MySQL, and anything added later)
+requires GENERATE to write every config value in exactly one deterministic
+form: `<<your_KEY_NAME>>`, e.g. `aws_access_key_id = <<your_aws_access_key_id>>`.
+`validate._PLACEHOLDER_SENTINEL_RE` checks for this exact shape as an
+additional, more precise signal -- **additive to, not a replacement for**,
+the marker-word list, since the model following any prompt instruction is
+still probabilistic, not guaranteed.
 
 Every prompt in VALIDATE has a timeout (`config.VALIDATE_TIMEOUT_SECONDS`,
 default 300s):
@@ -217,6 +275,57 @@ default 300s):
   LINT/RESOLVE/COMPILE failure, a missing library or absent credential is
   an environment problem regenerating code can't fix on its own.
 - A log message tells you what to fix; rerun once it's addressed.
+
+### Deterministic autofixes
+
+Four narrow, unambiguous bug classes are patched before anything is saved,
+rather than fed back as `error_context` for a retry -- in each case there's
+nothing for a regenerate-and-retry attempt to usefully *decide*, so patching
+costs nothing and a retry would only waste one of the run's limited attempts.
+`code_harness.py` runs `resolve.autofix_stdlib_module_imports` and
+`resolve.autofix_undefined_sibling_module_imports` (both generic,
+language-level) plus every system's own `AUTOFIXES` from `systems.ALL_SYSTEMS`
+(system-specific, API-level) on every attempt:
+
+- **`resolve.autofix_stdlib_module_imports`** -- a bare `X.attr` usage (e.g.
+  `time.time()`) where `X` is missing but IS a genuine stdlib module.
+  `import X` is the only possible fix.
+- **`resolve.autofix_undefined_sibling_module_imports`** -- the same idea, for
+  a SIBLING GENERATED FILE instead of a stdlib module, in the two shapes it's
+  actually shown up: `logger.log_operation(...)` used but `logger` never
+  imported (-> `import logger`, unambiguous since the module name is already
+  named in the code), and a bare `log_action(...)` call where exactly one
+  sibling file defines `log_action` at module level (-> `from logger import
+  log_action`; left alone if 2+ siblings define the same name, since that's
+  genuinely ambiguous). For the test round, the files it's allowed to import
+  from include the already-saved source files, not just the test files
+  themselves.
+- **`systems.aws.autofix_s3_us_east_1_location_constraint`** -- a real AWS API quirk:
+  `create_bucket(..., CreateBucketConfiguration={'LocationConstraint':
+  region})` raises `ClientError: InvalidLocationConstraint` whenever
+  `region` is `'us-east-1'` at runtime (AWS treats it as the default region
+  and rejects it being named explicitly), while every *other* region
+  requires exactly that argument. Since the region value is only known at
+  runtime (read from a config file GENERATE never sees the contents of),
+  the only fix that's correct regardless of what gets configured is
+  rewriting the call into a runtime `if region == 'us-east-1': ... else:
+  ...` branch -- confirmed against real `moto` for both cases.
+- **`systems.aws.autofix_ec2_terminate_instances_state_assertion`** -- a real AWS
+  async-behavior bug: `terminate_instances()`'s own *immediate* response
+  reports `CurrentState` as `'shutting-down'`, never `'terminated'`
+  (termination is asynchronous, confirmed against real `moto`), so a test
+  asserting `== 'terminated'` right after the call is simply wrong, not
+  flaky. Rewrites the specific `[...]['TerminatingInstances'][N]
+  ['CurrentState']['Name'] == 'terminated'` pattern to accept either valid
+  immediate state, without touching an unrelated comparison that happens to
+  also mention `'terminated'`.
+
+All four were adopted over the equivalent prompt-instruction approach
+deliberately -- this session's local model has already been observed
+ignoring equally explicit prompt instructions elsewhere (omitting
+`TOOL_REGISTRY` despite being told not to redefine it, folding an
+`(ENTRYPOINT)` marker inline against the documented format). A prompt
+addition is only ever probabilistic; an AST-level rewrite is guaranteed.
 
 ### The retry loop
 
@@ -268,19 +377,37 @@ output/<run_id>/
 
 ## Evals
 
-`eval_generate.py`, `eval_code_harness.py`, `eval_validate.py`,
-`eval_resolve.py`, `eval_lint.py`, and `eval_input_capture.py` are plain
-pass/fail scripts (no framework) covering the deterministic parsing/detection
-logic -- run them directly:
+`eval_plan.py`, `eval_generate.py`, `eval_code_harness.py`, `eval_validate.py`,
+`eval_resolve.py`, `eval_lint.py`, `eval_input_capture.py`, and `eval_confirm.py`
+are plain pass/fail scripts (no framework) covering the pipeline's own generic,
+system-agnostic logic -- run them directly:
 
 ```bash
+python eval_plan.py
 python eval_generate.py
 python eval_code_harness.py
 python eval_validate.py
 python eval_resolve.py
 python eval_lint.py
 python eval_input_capture.py
+python eval_confirm.py
 ```
+
+Per-system eval cases (AWS/MySQL/Ollama/LangChain instructions and autofixes)
+live under `systems/` and run as modules, from the `harness/` directory, so
+both `harness/` and `systems/` resolve on `sys.path`:
+
+```bash
+python -m systems.eval_config_format
+python -m systems.eval_aws
+python -m systems.eval_mysql
+python -m systems.eval_ollama_langchain
+```
+
+`systems/eval_aws.py`'s autofix cases don't stop at checking the rewritten
+code is syntactically valid -- the S3 and EC2 autofix cases actually execute
+the rewritten function against real `moto`, proving the fix genuinely
+resolves the AWS error rather than just parsing.
 
 `eval_code_harness.py` is the one exception to "pure unit tests" -- it runs
 the real `run_harness()` end to end (real SAVE/STAGE/LINT/RESOLVE/COMPILE/
@@ -296,21 +423,17 @@ a misclassified external system, a hallucinated cross-file reference, a
 missing stdlib import, a referenced-but-never-generated config file, an
 unrequested command dispatcher, a test file that never runs its own tests,
 a source round writing tests despite being told not to, missing AWS
-credential keys, etc.) -- see the comments at the top of each for what
+credential keys, a PLAN-promised file/function silently dropped by GENERATE,
+a FILE header format deviation that silently merged two files into one, a
+multi-parameter function signature mis-split into several bogus planned
+functions, the S3 `us-east-1` `LocationConstraint` error, the EC2
+`terminate_instances` async-state assertion, and a sibling generated file
+(e.g. `logger.py`) used but never imported, in both the `module.attr(...)`
+and bare-call shapes, etc.) -- see the comments at the top of each for what
 specific run each case came from.
 
 ## Possible extensions
 
-- **Other languages.** The pipeline's *shape* (spec -> generate -> static
-  checks -> runtime checks -> execute, retrying with the failure fed back
-  in) is language-agnostic -- DEFINE, SAVE/STAGE, and the retry loop already
-  don't care what language the output is. LINT/RESOLVE/COMPILE/VALIDATE/
-  EXECUTE are the parts that would need real rework, since they're built
-  directly on Python-only tooling (`ast`, `py_compile`, `importlib`,
-  `sys.executable`) with no drop-in equivalent -- e.g. Roslyn for C#'s
-  AST/compile checks, `libclang`/`gcc` for C's. The model itself
-  (`qwen2.5-coder:7b`) already writes reasonable C/C++/C#, so it wouldn't
-  need to change.
 - **Per-file GENERATE rounds.** Today's two-round split (source, then test)
   only grounds the *test* round in real saved code -- multiple source files
   in the same round can still hallucinate references to each other, caught
@@ -319,7 +442,15 @@ specific run each case came from.
   file's GENERATE call sees every sibling file already written before it)
   would close that gap the same way the source/test split closed its own,
   at the cost of dependency-ordering multiple production files instead of
-  just two categories.
+  just two categories. Designed (not yet built) in
+  `source-file-dependency-retry-granularity.md`, which extends PLAN's file
+  manifest with a `depends_on` field for exactly this -- currently blocked
+  on real-world use of the PLAN stage settling first. One file-count call
+  per source file instead of one call for the whole round multiplies how
+  many gaps exist for Ollama's idle timer to expire between them, so
+  `config.OLLAMA_KEEP_ALIVE` (added to cover today's DEFINE/PLAN/GENERATE
+  gaps) becomes more load-bearing here, not just a nice-to-have -- worth
+  re-checking its value is still long enough once this actually ships.
 - **A real symbol-resolution tool in place of RESOLVE's hand-rolled checks.**
   `resolve.py`'s undefined-name/undefined-reference checks are a manual
   approximation built on `ast` alone -- `ast` only gives a syntax tree, no
@@ -333,3 +464,26 @@ specific run each case came from.
   checker first -- an awkward fit for symbol resolution alone), and
   **Jedi** (an importable Python *library* rather than a CLI, callable
   in-process from `resolve.py` directly) already solve this properly.
+- **Supporting other models.** Everything today is built and tuned around one
+  fixed local model (`config.LOCAL_MODEL`, `qwen2.5-coder:7b`) -- needs
+  exploring whether other locally-runnable models (e.g. Hermes, Microsoft
+  Phi-3 -- placeholders, not evaluated yet) could be used instead or offered
+  as a choice. Open questions, not yet answered: does the FILE-header/
+  ENTRYPOINT protocol GENERATE relies on (`generate.py`'s `FILE_HEADER_RE`/
+  `ENTRY_MARKER_RE`) hold up against a differently-trained model's own
+  formatting habits, or would it reproduce the same class of deviation the
+  inline `(ENTRYPOINT)` bug did; does a different model's tool-calling
+  support change what `systems/ollama.py`'s `OLLAMA_INSTRUCTION` needs to
+  say; and would `config.OLLAMA_KEEP_ALIVE`/timeout defaults tuned against
+  this one model's CPU-inference speed still make sense for a
+  faster-or-slower one.
+- **Other languages.** The pipeline's *shape* (spec -> generate -> static
+  checks -> runtime checks -> execute, retrying with the failure fed back
+  in) is language-agnostic -- DEFINE, SAVE/STAGE, and the retry loop already
+  don't care what language the output is. LINT/RESOLVE/COMPILE/VALIDATE/
+  EXECUTE are the parts that would need real rework, since they're built
+  directly on Python-only tooling (`ast`, `py_compile`, `importlib`,
+  `sys.executable`) with no drop-in equivalent -- e.g. Roslyn for C#'s
+  AST/compile checks, `libclang`/`gcc` for C's. The model itself
+  (`qwen2.5-coder:7b`) already writes reasonable C/C++/C#, so it wouldn't
+  need to change.

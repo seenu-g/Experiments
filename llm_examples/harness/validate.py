@@ -24,6 +24,22 @@ from timeout_input import InputTimeout, confirm_with_timeout, input_with_timeout
 
 _PLACEHOLDER_MARKERS = ("password", "changeme", "your_", "xxx", "example", "<", "todo")
 
+# The one deterministic placeholder sentinel GENERATE is instructed to use (see
+# generate.CONFIG_FORMAT_INSTRUCTION) -- '<<your_KEY_NAME>>', system-agnostic (AWS, MySQL, or
+# whatever's added next). Checked explicitly, not just relying on "<" already being in
+# _PLACEHOLDER_MARKERS above, so this stays correct even if that marker list is ever edited,
+# and so the harness's intent here is unambiguous in code, not just an accidental substring
+# collision. Model compliance with the format is still probabilistic (this is additive to
+# _PLACEHOLDER_MARKERS, not a replacement) -- a value that doesn't match this exact shape still
+# falls through to the marker-word heuristic below.
+_PLACEHOLDER_SENTINEL_RE = re.compile(r"^<<\s*your_\w+\s*>>$", re.IGNORECASE)
+
+
+def _looks_like_placeholder(value: str) -> bool:
+    return bool(_PLACEHOLDER_SENTINEL_RE.match(value.strip())) or any(
+        marker in value.lower() for marker in _PLACEHOLDER_MARKERS
+    )
+
 # Matches a whole line that's just one credential-looking assignment with a
 # *quoted* (string-literal) value, e.g. `password = 'abc123'` or
 # `    'user': 'your_username',`. Requiring the value to be quoted is what
@@ -83,7 +99,7 @@ def find_placeholder_config_values(non_py_paths: list, external_system: str = ""
             for key, value in parser[section].items()
             if not value.strip()
             or key.lower() in always_flag_keys
-            or any(marker in value.lower() for marker in _PLACEHOLDER_MARKERS)
+            or _looks_like_placeholder(value)
         ]
         if flagged:
             findings[path] = flagged
@@ -111,7 +127,7 @@ def find_placeholder_credentials_in_py(py_paths: list, external_system: str = ""
             if (
                 not value.strip()
                 or key in always_flag_keys
-                or any(marker in value.lower() for marker in _PLACEHOLDER_MARKERS)
+                or _looks_like_placeholder(value)
             ):
                 findings.append((path, key, value, m.start("value"), m.end("value")))
     return findings

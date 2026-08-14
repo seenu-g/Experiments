@@ -13,9 +13,13 @@ import re
 
 import ollama
 
-from config import LOCAL_MODEL
+from config import LOCAL_MODEL, OLLAMA_KEEP_ALIVE
+from systems import ALL_SYSTEMS
 
-FILE_HEADER_RE = re.compile(r"^#\s*===\s*FILE:\s*(?P<fname>\S+)\s*===\s*$", re.MULTILINE)
+FILE_HEADER_RE = re.compile(
+    r"^#\s*===\s*FILE:\s*(?P<fname>\S+)(?P<inline_entry>\s*\((?i:ENTRYPOINT)\))?\s*===\s*$",
+    re.MULTILINE,
+)
 ENTRY_MARKER_RE = re.compile(r"^[ \t]*#\s*===\s*ENTRYPOINT\s*===\s*$\n?", re.MULTILINE)
 FENCE_RE = re.compile(r"```\w*\s*\n?(?P<code>.*?)```", re.DOTALL)
 STRAY_FENCE_LINE_RE = re.compile(r"^```\w*\s*$")
@@ -40,133 +44,6 @@ def _strip_fence(block: str) -> str:
     while lines and STRAY_FENCE_LINE_RE.match(lines[-1]):
         lines.pop()
     return "\n".join(lines).strip()
-
-
-CONFIG_FORMAT_INSTRUCTION = (
-    "Any config values (credentials, connection settings, etc.) must be stored in ONE INI file "
-    "(e.g. app_config.ini) shared by whatever external systems the task involves -- AWS "
-    "credentials/region and a database's credentials both belong in that same file if a task "
-    "needs both, never split across separate config files. Parse it via configparser -- never a "
-    "Python dict, .env, or .json file. This keeps config storage consistent and in one "
-    "predictable format across tasks. If any file calls configparser's .read('app_config.ini') "
-    "(or whatever you name it), that exact .ini file MUST itself be one of the files you output, "
-    "with its own '# === FILE: app_config.ini ===' header and fenced block -- referencing a "
-    "config file without actually outputting it is a bug: configparser.read() does not raise an "
-    "error for a missing file, it silently does nothing, so the code only fails later with a "
-    "confusing KeyError when a key is looked up."
-)
-
-AWS_INSTRUCTION = (
-    "If the task involves AWS services via boto3, write production code with plain boto3 clients "
-    "(no hardcoded endpoint_url). Store the AWS region AND credentials in the same config INI "
-    "file, under keys named exactly 'region', 'aws_access_key_id', and 'aws_secret_access_key' "
-    "(e.g. 'region = us-east-1', 'aws_access_key_id = your_access_key', 'aws_secret_access_key = "
-    "your_secret_key' in the same section) -- the actual values are placeholders a human fills in "
-    "later, but the KEYS must exist. Every boto3.client(...)/boto3.resource(...) call must pass "
-    "all three explicitly -- region_name=<config value>, aws_access_key_id=<config value>, "
-    "aws_secret_access_key=<config value> -- read from the config, never hardcoded directly in "
-    "the boto3 call itself and never omitted. Do not rely on any of these being available some "
-    "other way (environment variables, ~/.aws/config, an IAM role): there is no default region or "
-    "credentials configured in this environment, so boto3 raises NoRegionError/NoCredentialsError "
-    "before a call even reaches AWS (or moto, under test) if any of the three is omitted. "
-    + CONFIG_FORMAT_INSTRUCTION
-)
-
-AWS_TEST_INSTRUCTION = (
-    "For the unit test file, mock AWS with moto: decorate test functions/classes with a bare "
-    "@mock_aws (import via 'from moto import mock_aws'), and create boto3 clients/resources "
-    "inside the mocked test using region_name='us-east-1' -- moto intercepts the calls in-process, "
-    "so no real AWS credentials or network access are needed. mock_aws takes NO arguments -- never "
-    "write @mock_aws('s3') or @mock_aws('ec2') or any other service name as an argument; that is "
-    "the old, removed per-service API (mock_s3, mock_ec2, etc., which no longer exist in moto and "
-    "will raise ImportError). The single, current @mock_aws decorator mocks every AWS service "
-    "generically and takes no arguments at all. If the task's entrypoint is the test file, running "
-    "it under moto must fully succeed without touching real AWS. Each test must be self-contained: "
-    "create every resource that test needs within that same test (never assume a resource created "
-    "by a different test still exists -- test order is not guaranteed and each test may run against "
-    "a fresh mock), and only ever delete/terminate a resource that this same test created -- never "
-    "delete or terminate a resource you did not create yourself, even inside the mock. Every "
-    "resource name/ID a test creates (bucket name, instance name, etc.) must be unique to that "
-    "test -- pass it in as a variable built from a timestamp (e.g. f'test-bucket-{int(time.time())}'), "
-    "never a fixed literal like 'test-bucket' reused across multiple test methods, so tests can "
-    "never collide on the same resource name. If you use time.time() for this, the test file must "
-    "'import time' at the top -- it is not implicitly available just because it's used elsewhere."
-)
-
-
-MYSQL_INSTRUCTION = (
-    "If the task involves a MySQL database via mysql.connector, the config file's credential keys "
-    "must be named exactly 'user' and 'password' (matching mysql.connector.connect()'s keyword "
-    "arguments), never 'admin_username' or other names -- so the config section can be passed "
-    "straight into connect(**config) without renaming keys. Always include both a 'user' key and a "
-    "'password' key in the config file; never omit the password. " + CONFIG_FORMAT_INSTRUCTION
-)
-
-MYSQL_TEST_INSTRUCTION = (
-    "Any test database or test user the code creates against a real MySQL server must have a name "
-    "unique to that run -- suffix it with a timestamp (e.g. f'test_db_{int(time.time())}'), never a "
-    "fixed literal like 'test_db'. This server persists between runs, so a fixed name collides with "
-    "whatever a previous run's test left behind (e.g. it crashed before its own cleanup ran) with a "
-    "'database exists' error that has nothing to do with whether this run's code is correct."
-)
-
-
-OLLAMA_INSTRUCTION = (
-    "If the task calls a local Ollama model directly (not via LangChain), use the real 'ollama' "
-    "package API -- there is no ollama.initialize() function. Use either "
-    f"ollama.chat(model='{LOCAL_MODEL}', messages=[{{'role': 'user', 'content': prompt}}])"
-    f"['message']['content'], or ollama.generate(model='{LOCAL_MODEL}', prompt=prompt)['response']. "
-    f"Always pass the exact, real model name '{LOCAL_MODEL}' -- never a placeholder-looking string "
-    "like 'your-model-name' or 'model-name'. Ollama validates the model name against what's actually "
-    "installed and raises a 404 ResponseError for anything else, so a made-up name (fine for other "
-    "demo arguments) is a real bug here, not just a style choice. If the task requires tool-calling "
-    "(the LLM itself deciding which function to invoke), use ollama.chat's 'tools' parameter with a "
-    "proper function-calling schema and let the model's own response determine which tool to call -- "
-    "do not keyword-match the user's question yourself in plain Python; that is not LLM-driven tool "
-    "use, it defeats the point of the task.\n\n"
-    "Follow this exact two-call loop -- copy this shape, do not invent your own control flow:\n\n"
-    "TOOLS = [\n"
-    "    {\n"
-    "        'type': 'function',\n"
-    "        'function': {\n"
-    "            'name': 'get_current_date_time',\n"
-    "            'description': 'Get the current date and time. Use this when the question asks "
-    "about the current date, time, or day.',\n"
-    "            'parameters': {'type': 'object', 'properties': {}, 'required': []},\n"
-    "        },\n"
-    "    },\n"
-    "    # one dict per tool, same shape, with real 'properties' for any arguments it takes\n"
-    "]\n"
-    "TOOL_REGISTRY = {'get_current_date_time': get_current_date_time, ...}  # name -> real Python function\n\n"
-    "def ask_agent(question):\n"
-    "    messages = [{'role': 'user', 'content': question}]\n"
-    "    first = ollama.chat(model='" + LOCAL_MODEL + "', messages=messages, tools=TOOLS)\n"
-    "    reply = first['message']\n"
-    "    tool_calls = reply.get('tool_calls')\n"
-    "    if not tool_calls:\n"
-    "        return reply['content']  # model answered directly, no tool was needed\n"
-    "    messages.append(reply)\n"
-    "    for call in tool_calls:\n"
-    "        name = call['function']['name']\n"
-    "        args = call['function']['arguments']  # already a dict, do not json.loads it\n"
-    "        result = TOOL_REGISTRY[name](**args)\n"
-    "        messages.append({'role': 'tool', 'content': str(result), 'name': name})\n"
-    "    second = ollama.chat(model='" + LOCAL_MODEL + "', messages=messages, tools=TOOLS)\n"
-    "    return second['message']['content']\n\n"
-    "Never call a tool function directly from your own Python logic based on keywords found in the "
-    "question -- the ONLY thing allowed to decide which tool(s) run is the 'tool_calls' the model "
-    "returns from the first ollama.chat call above. In __main__, call ask_agent() with at least two "
-    "different example questions, chosen so each one should naturally route to a different tool -- "
-    "this is what actually demonstrates tool selection; one question that happens to need every tool "
-    "proves nothing about whether the model, rather than your code, made the choice."
-)
-
-LANGCHAIN_INSTRUCTION = (
-    "If the task calls a local Ollama model via LangChain, use the real langchain_ollama package -- "
-    "there is no langchain.LangChainClient class. Use 'from langchain_ollama import OllamaLLM', then "
-    f"'llm = OllamaLLM(model=\"{LOCAL_MODEL}\")' and 'response = llm.invoke(prompt)'. Always pass the "
-    f"exact, real model name '{LOCAL_MODEL}' -- never a placeholder-looking string."
-)
 
 
 _BASE_INSTRUCTION = (
@@ -221,17 +98,9 @@ _TEST_ONLY_INSTRUCTION = (
 def build_source_system_instruction(error_context: str = "", external_system: str = "") -> str:
     system_instruction = _BASE_INSTRUCTION + "\n\n" + _SOURCE_ONLY_INSTRUCTION
 
-    if "aws" in external_system.lower():
-        system_instruction += "\n\n" + AWS_INSTRUCTION
-
-    if "mysql" in external_system.lower():
-        system_instruction += "\n\n" + MYSQL_INSTRUCTION
-
-    if "ollama" in external_system.lower():
-        system_instruction += "\n\n" + OLLAMA_INSTRUCTION
-
-    if "langchain" in external_system.lower():
-        system_instruction += "\n\n" + LANGCHAIN_INSTRUCTION
+    for system in ALL_SYSTEMS:
+        if system.matches(external_system):
+            system_instruction += "\n\n" + system.SOURCE_INSTRUCTION
 
     if error_context:
         system_instruction += f"\n\nCRITICAL: Your previous code failed. Completely fix this:\n{error_context}"
@@ -242,16 +111,36 @@ def build_source_system_instruction(error_context: str = "", external_system: st
 def build_test_system_instruction(error_context: str = "", external_system: str = "") -> str:
     system_instruction = _BASE_INSTRUCTION + "\n\n" + _TEST_ONLY_INSTRUCTION
 
-    if "aws" in external_system.lower():
-        system_instruction += "\n\n" + AWS_TEST_INSTRUCTION
-
-    if "mysql" in external_system.lower():
-        system_instruction += "\n\n" + MYSQL_TEST_INSTRUCTION
+    for system in ALL_SYSTEMS:
+        if system.matches(external_system) and system.TEST_INSTRUCTION:
+            system_instruction += "\n\n" + system.TEST_INSTRUCTION
 
     if error_context:
         system_instruction += f"\n\nCRITICAL: Your previous test code failed. Completely fix this:\n{error_context}"
 
     return system_instruction
+
+
+def _format_plan_context(planned_files: list | None) -> str:
+    """Render the confirmed PLAN-stage manifest (see plan.py) as context so
+    GENERATE produces exactly the files/functions the user already confirmed,
+    not a fresh, silent re-invention of file/function structure on every call.
+    Returns "" when there's no plan (e.g. no PLAN stage ran) -- callers append
+    this, so an empty string is a clean no-op."""
+    if not planned_files:
+        return ""
+
+    lines = []
+    for planned in planned_files:
+        functions = ", ".join(planned["functions"]) if planned["functions"] else "N/A"
+        entrypoint = " (ENTRYPOINT)" if planned["entrypoint"] else ""
+        lines.append(f"- {planned['filename']}{entrypoint}: {planned['purpose']} -- functions: {functions}")
+
+    return (
+        "\n\nProduce exactly these files, in this order, with these top-level functions/classes "
+        "-- you may add private helpers, but do not omit, rename, or add top-level files beyond "
+        "this plan without reason:\n" + "\n".join(lines)
+    )
 
 
 def _format_source_code_context(source_files: list) -> str:
@@ -268,31 +157,46 @@ def _format_source_code_context(source_files: list) -> str:
 
 
 def ask_local_model_for_source_code(
-    source_spec: str, error_context: str = "", external_system: str = ""
+    source_spec: str,
+    error_context: str = "",
+    external_system: str = "",
+    planned_files: list | None = None,
 ) -> str:
     """`source_spec` is expected to already have any test-writing content stripped out by the
     caller (see define.strip_test_content) -- this round's user message should describe
-    nothing about tests at all, not even a step to ignore."""
+    nothing about tests at all, not even a step to ignore.
+
+    `planned_files`: the source-round subset of the confirmed PLAN-stage manifest (see plan.py),
+    already filtered by the caller (is_test=False). None when no PLAN stage ran."""
     system_instruction = build_source_system_instruction(error_context, external_system)
+    user_content = source_spec + _format_plan_context(planned_files)
 
     print(f"Querying {LOCAL_MODEL} (source)...")
     response = ollama.chat(
         model=LOCAL_MODEL,
         messages=[
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": source_spec},
+            {"role": "user", "content": user_content},
         ],
         options={"temperature": 0.1},
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
     return response["message"]["content"]
 
 
 def ask_local_model_for_test_code(
-    test_spec: str, source_files: list, error_context: str = "", external_system: str = ""
+    test_spec: str,
+    source_files: list,
+    error_context: str = "",
+    external_system: str = "",
+    planned_files: list | None = None,
 ) -> str:
     """`test_spec` is expected to be just the spec's test-related content (see
     define.extract_test_steps), not the full original spec -- this round is grounded in the
-    real source code below, not a repeat of the production Input/Output/Steps it never needs."""
+    real source code below, not a repeat of the production Input/Output/Steps it never needs.
+
+    `planned_files`: the test-round subset of the confirmed PLAN-stage manifest (see plan.py),
+    already filtered by the caller (is_test=True). None when no PLAN stage ran."""
     system_instruction = build_test_system_instruction(error_context, external_system)
     user_content = (
         f"{test_spec}\n\n"
@@ -300,6 +204,7 @@ def ask_local_model_for_test_code(
         "lint/resolve/compile -- write test(s) against it exactly as shown, do not redefine "
         "any of it:\n\n"
         f"{_format_source_code_context(source_files)}"
+        f"{_format_plan_context(planned_files)}"
     )
 
     print(f"Querying {LOCAL_MODEL} (test)...")
@@ -310,6 +215,7 @@ def ask_local_model_for_test_code(
             {"role": "user", "content": user_content},
         ],
         options={"temperature": 0.1},
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
     return response["message"]["content"]
 
@@ -337,7 +243,12 @@ def parse_generated_files(raw_llm_text: str, default_filename: str) -> tuple[lis
         end = headers[i + 1].start() if i + 1 < len(headers) else len(clean_text)
         block = clean_text[start:end]
 
-        if ENTRY_MARKER_RE.search(block):
+        # Two ways the model marks the entrypoint: a standalone "# === ENTRYPOINT ===" line
+        # in the body (the instructed format), or "(ENTRYPOINT)" folded inline onto the FILE
+        # header itself (a format deviation observed in real output -- the strict old regex
+        # failed to match that header line at all, silently merging this file's entire content
+        # into the PRECEDING file's block; see the 20260814_163031 run).
+        if header.group("inline_entry") or ENTRY_MARKER_RE.search(block):
             entry_filename = fname
             block = ENTRY_MARKER_RE.sub("", block)
 

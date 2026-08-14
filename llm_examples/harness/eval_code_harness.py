@@ -84,6 +84,14 @@ def _fake_confirm_save_permission(run_dir, confirm):
     return True
 
 
+def _fake_plan_task(spec, external_system, needs_tests, confirm, logger):
+    """No PLAN-stage manifest -- same as a run where the user's task predates
+    the PLAN stage. Keeps this eval's existing behavior (and its no-live-call
+    guarantee) unchanged; plan-conformance-specific retry behavior gets its
+    own dedicated eval case, not this one."""
+    return []
+
+
 def _patched(monkeypatches):
     """Apply {attr_name: value} to code_harness's module namespace, returning
     a restore function -- this codebase has no pytest/monkeypatch fixture, so
@@ -109,17 +117,18 @@ def eval_test_only_failure_does_not_regenerate_source():
         {
             "define_task": _fake_define_task,
             "confirm_save_permission": _fake_confirm_save_permission,
+            "plan_task": _fake_plan_task,
         }
     )
     try:
         source_calls = []
         test_calls = []
 
-        def fake_source(source_spec, error_context="", external_system=""):
+        def fake_source(source_spec, error_context="", external_system="", planned_files=None):
             source_calls.append(error_context)
             return VALID_SOURCE_RAW
 
-        def fake_test(test_spec, source_files, error_context="", external_system=""):
+        def fake_test(test_spec, source_files, error_context="", external_system="", planned_files=None):
             test_calls.append(error_context)
             return BROKEN_TEST_RAW if len(test_calls) == 1 else VALID_TEST_RAW
 
@@ -160,17 +169,18 @@ def eval_source_failure_skips_test_round_entirely():
         {
             "define_task": _fake_define_task,
             "confirm_save_permission": _fake_confirm_save_permission,
+            "plan_task": _fake_plan_task,
         }
     )
     try:
         source_calls = []
         test_calls = []
 
-        def fake_source(source_spec, error_context="", external_system=""):
+        def fake_source(source_spec, error_context="", external_system="", planned_files=None):
             source_calls.append(error_context)
             return BROKEN_SOURCE_RAW if len(source_calls) == 1 else VALID_SOURCE_RAW
 
-        def fake_test(test_spec, source_files, error_context="", external_system=""):
+        def fake_test(test_spec, source_files, error_context="", external_system="", planned_files=None):
             test_calls.append(error_context)
             return VALID_TEST_RAW
 
@@ -198,9 +208,98 @@ def eval_source_failure_skips_test_round_entirely():
         restore()
 
 
+# main.py, function 'add' -- attempt 1's fake source deliberately defines 'wrong_name' instead,
+# a plan-conformance failure (not a lint/resolve/compile failure) that only check_plan_conformance
+# catches; attempt 2 defines 'add' correctly.
+PLANNED_MAIN_WITH_ADD = [
+    {
+        "filename": "main.py",
+        "purpose": "add two numbers",
+        "functions": ["add"],
+        "entrypoint": True,
+        "is_test": False,
+    }
+]
+
+WRONG_FUNCTION_NAME_SOURCE_RAW = "```python\ndef wrong_name(a, b):\n    return a + b\n```\n"
+
+
+def eval_plan_conformance_failure_retries_source_round_only():
+    """Case C: the source round's own output is syntactically valid and passes
+    lint/resolve/compile, but doesn't match the confirmed PLAN-stage manifest
+    (attempt 1 defines 'wrong_name' instead of the planned 'add'). This must
+    retry the source round alone, exactly like a lint/resolve/compile failure
+    does -- the test round must never run during attempt 1."""
+
+    def _fake_plan_task_with_plan(spec, external_system, needs_tests, confirm, logger):
+        return PLANNED_MAIN_WITH_ADD
+
+    restore = _patched(
+        {
+            "define_task": _fake_define_task,
+            "confirm_save_permission": _fake_confirm_save_permission,
+            "plan_task": _fake_plan_task_with_plan,
+        }
+    )
+    try:
+        source_calls = []
+        test_calls = []
+
+        def fake_source(source_spec, error_context="", external_system="", planned_files=None):
+            source_calls.append(error_context)
+            return WRONG_FUNCTION_NAME_SOURCE_RAW if len(source_calls) == 1 else VALID_SOURCE_RAW
+
+        def fake_test(test_spec, source_files, error_context="", external_system="", planned_files=None):
+            test_calls.append(error_context)
+            return VALID_TEST_RAW
+
+        result = code_harness.run_harness(
+            confirm=lambda prompt: True,
+            is_test=True,
+            ask_local_model_for_source_code=fake_source,
+            ask_local_model_for_test_code=fake_test,
+        )
+
+        ok = True
+        ok &= check("run succeeds by attempt 2", result is True)
+        ok &= check(
+            "fake source generator called twice (plan-nonconforming v1, conforming v2)",
+            len(source_calls) == 2,
+            f"called {len(source_calls)} times",
+        )
+        ok &= check(
+            "attempt 2's error_context names the missing planned function",
+            len(source_calls) == 2 and "add" in source_calls[1],
+            source_calls[1] if len(source_calls) == 2 else "n/a",
+        )
+        ok &= check(
+            "fake test generator called exactly once total -- never ran during attempt 1's "
+            "plan-conformance failure",
+            len(test_calls) == 1,
+            f"called {len(test_calls)} times",
+        )
+        return ok
+    finally:
+        restore()
+
+
+def eval_run_harness_defaults_to_non_interactive_confirm():
+    """run_harness()'s own default confirm= is auto_confirm, not default_confirm --
+    non-interactive by default at the function level, not just via the __main__ CLI
+    flag, so any other caller that doesn't override confirm= also gets it."""
+    import inspect
+
+    from confirm import auto_confirm
+
+    default = inspect.signature(code_harness.run_harness).parameters["confirm"].default
+    return check("run_harness's own confirm= default is auto_confirm", default is auto_confirm)
+
+
 if __name__ == "__main__":
     results = [
         eval_test_only_failure_does_not_regenerate_source(),
         eval_source_failure_skips_test_round_entirely(),
+        eval_plan_conformance_failure_retries_source_round_only(),
+        eval_run_harness_defaults_to_non_interactive_confirm(),
     ]
     sys.exit(0 if all(results) else 1)
