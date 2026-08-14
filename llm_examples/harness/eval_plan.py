@@ -39,6 +39,37 @@ FUNCTIONS: reverse_string(text)
 ENTRYPOINT: yes
 """
 
+# Regression case for the 2026-08-15 20260815_031255 run: only the FIRST file used the
+# instructed plain 'FILE: X' form -- every file after it drifted into GENERATE's own
+# '# === FILE: X ===' header convention instead. The old plain-only regex didn't match
+# those lines at all, silently merging ec2_manager.py/logger.py/main.py into
+# app_config.ini's own content -- planned_files ended up with exactly one entry, so
+# check_plan_conformance had nothing to check the genuinely-missing logger.py against.
+MIXED_HEADER_STYLE_PLAN = """FILE: app_config.ini
+PURPOSE: AWS credentials and region
+FUNCTIONS: N/A
+ENTRYPOINT: No
+ROUND: source
+
+# === FILE: ec2_manager.py ===
+PURPOSE: manage EC2 instances
+FUNCTIONS: create_ec2_instance(name)
+ENTRYPOINT: No
+ROUND: source
+
+# === FILE: logger.py ===
+PURPOSE: logs actions
+FUNCTIONS: log_action(resource, operation)
+ENTRYPOINT: No
+ROUND: source
+
+# === FILE: main.py ===
+PURPOSE: entry point
+FUNCTIONS: N/A
+ENTRYPOINT: Yes
+ROUND: source
+"""
+
 # Regression case for the 2026-08-14 20260814_164832 run: a naive split on every
 # comma broke this single multi-parameter function's signature into 6 bogus
 # "functions" (one per parameter), and check_plan_conformance then falsely
@@ -117,6 +148,28 @@ def eval_multi_param_function_signature_not_split_on_its_own_commas():
         "exactly the two real functions parsed, not one bogus entry per parameter",
         files[0]["functions"] == ["create_instance", "delete_instance"],
         str(files[0]["functions"]),
+    )
+    return ok
+
+
+def eval_extract_planned_files_tolerates_mixed_header_styles():
+    files = extract_planned_files(MIXED_HEADER_STYLE_PLAN)
+    names = [f["filename"] for f in files]
+    ok = True
+    ok &= check(
+        "all four files parsed despite mixed header styles",
+        names == ["app_config.ini", "ec2_manager.py", "logger.py", "main.py"],
+        names,
+    )
+    by_name = {f["filename"]: f for f in files}
+    ok &= check(
+        "'# === FILE: X ===' style file's functions parsed correctly",
+        by_name["logger.py"]["functions"] == ["log_action"],
+        by_name["logger.py"]["functions"],
+    )
+    ok &= check(
+        "'# === FILE: X ===' style file's entrypoint flag parsed correctly",
+        by_name["main.py"]["entrypoint"] is True,
     )
     return ok
 
@@ -201,6 +254,7 @@ if __name__ == "__main__":
         eval_extract_planned_files_single_no_functions(),
         eval_missing_round_defaults_to_source(),
         eval_multi_param_function_signature_not_split_on_its_own_commas(),
+        eval_extract_planned_files_tolerates_mixed_header_styles(),
         eval_extract_planned_files_empty_reply_returns_empty_list(),
         eval_aws_instruction_requires_ini_file_block(),
         eval_needs_tests_gates_round_field_instruction(),

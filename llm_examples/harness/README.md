@@ -427,10 +427,12 @@ credential keys, a PLAN-promised file/function silently dropped by GENERATE,
 a FILE header format deviation that silently merged two files into one, a
 multi-parameter function signature mis-split into several bogus planned
 functions, the S3 `us-east-1` `LocationConstraint` error, the EC2
-`terminate_instances` async-state assertion, and a sibling generated file
-(e.g. `logger.py`) used but never imported, in both the `module.attr(...)`
-and bare-call shapes, etc.) -- see the comments at the top of each for what
-specific run each case came from.
+`terminate_instances` async-state assertion, a sibling generated file (e.g.
+`logger.py`) used but never imported (in both the `module.attr(...)` and
+bare-call shapes), and a PLAN reply drifting mid-response from the instructed
+plain `FILE: X` header into GENERATE's own `# === FILE: X ===` style, which
+silently dropped every file block after the first, etc.) -- see the comments
+at the top of each for what specific run each case came from.
 
 ## Possible extensions
 

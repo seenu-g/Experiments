@@ -22,7 +22,19 @@ from config import LOCAL_MODEL, OLLAMA_KEEP_ALIVE
 from systems import ALL_SYSTEMS
 from systems.config_format import CONFIG_FORMAT_INSTRUCTION
 
-FILE_BLOCK_HEADER_RE = re.compile(r"^FILE:\s*(?P<fname>\S+)\s*$", re.MULTILINE)
+# Tolerates both the plain 'FILE: <name>' form this stage instructs, and GENERATE's own
+# '# === FILE: <name> ===' convention -- the model has been observed drifting into the
+# latter starting from the SECOND file block onward (2026-08-15, the 20260815_031255 run:
+# only app_config.ini used the plain form; every file after it used '# === FILE: X ===',
+# which the old plain-only regex didn't match at all, silently merging ec2_manager.py,
+# s3_manager.py, logger.py, and everything else into app_config.ini's own content --
+# planned_files ended up with exactly one entry, so check_plan_conformance had nothing
+# to check the genuinely-missing logger.py against). Same failure shape as the
+# inline-'(ENTRYPOINT)' bug already fixed in generate.FILE_HEADER_RE -- a format
+# deviation must never silently swallow every file block after the first.
+FILE_BLOCK_HEADER_RE = re.compile(
+    r"^(?:#\s*===\s*)?FILE:\s*(?P<fname>\S+?)(?:\s*===)?\s*$", re.MULTILINE
+)
 
 
 def _split_top_level_functions(functions_raw: str) -> list[str]:
