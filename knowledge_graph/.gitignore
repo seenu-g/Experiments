@@ -1,9 +1,24 @@
 .env
-
+.claude
 
 *.log
 *.pyc
 *.*output.txt
-
+data
+data/*
 __pycache__
 report_cache
+resume_kg/__pycache__
+resume_kg/__pycache__/*
+resume_kg/extreacted.txt
+resume_kg/fixtures
+resume_kg/fiXtures/*
+resume_kg/output
+resume_kg/output/*
+resume_kg/*.pdf
+resume_kg/*.png
+resume_kg/*.json
+drug_analysis/__pycache__
+drug_analysis/__pycache__/*
+drug_analysis/.venv312
+drug_analysis/.venv312/*
