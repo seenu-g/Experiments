@@ -2,8 +2,8 @@
 __pycache__/
 chroma_db/
 models/
-hfcache/
-
+hf_cache/
+hf_cache/*
 *.db
 *.def
 *.dll
