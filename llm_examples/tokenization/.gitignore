@@ -1,0 +1,10 @@
+.env
+__pycache__/
+chroma_db/
+models/
+hf_cache/
+hf_cache/*
+*.db
+*.def
+*.dll
+*.json
