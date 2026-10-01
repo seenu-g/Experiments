@@ -3,4 +3,8 @@ __pycache__/
 __pycache__/*
 .claude
 .claude/*
-server.log
+service_report.html
+*.html
+software_report.html
+agent_log.txt
+*.txt
