@@ -1,0 +1,7 @@
+# Secrets and local state - never commit
+telegram_config.json
+telegram_state.json
+*.tmp
+inbox_log.txt
+images
+tweets
